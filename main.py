@@ -7,12 +7,12 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 total_track_lists = 0
 
-def build_url(offset, other_params):
+def build_url(artist_name, offset, other_params):
     base_url = "https://www.mixesdb.com/w/MixesDB:Explorer/Mixes"
     params = {
         "do": "mx",
         "mode": "",
-        "cat1": "Ben UFO",
+        "cat1": artist_name,
         "cat2": "",
         "jnC": "",
         "style": "",
@@ -36,8 +36,8 @@ def build_url(offset, other_params):
 
 
 
-def fetch_tracklists(offset, other_params):
-    url = build_url(offset, other_params)
+def fetch_tracklists(artist_name, offset, other_params):
+    url = build_url(artist_name, offset, other_params)
     response = requests.get(url, headers=HEADERS)
     response.raise_for_status()
     return BeautifulSoup(response.content, "html.parser")
@@ -60,10 +60,11 @@ def write_to_json(tracklists, filename="tracklists.json"):
         json.dump(tracklists, f, ensure_ascii=False, indent=4)
 
 def main():
+    artist_name = input("Enter artist name: ")
     total_track_lists = 295  # or you can dynamically find this value
     all_tracklists = []
     for offset in range(0, total_track_lists, 25):
-        soup = fetch_tracklists(offset, {})
+        soup = fetch_tracklists(artist_name, offset, {})
         tracklists = parse_tracklists(soup)
         all_tracklists.extend(tracklists)
     write_to_json(all_tracklists)

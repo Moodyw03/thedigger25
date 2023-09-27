@@ -6,34 +6,35 @@ from urllib.parse import quote
 url = "https://www.mixesdb.com/tools/api/apiAffTracklists.php"
 
 data = [
-    "[000] Princess Diana Of Wales - Cut [A Colourful Storm - INTIM001]",
-    "[006] Nate Scheible - Plumbe05",
-    "[009] Polygonia - ITiTi [Phase Imprint - PHASESNGL001]",
-    "[012] Shackleton - You Bring Me Down (Peverelist Remix) [Skull Disco - SKULLCD002II]",
-    "[014] Call Super & Julia Holter - Illumina [Can You Feel The Sun - CYFUSOUL]",
-    "[018] OHM - Tribal Tone (Sabres Mix 1) [Hubba Hubba - HUB 011]",
-    "[022] Nubian Mindz - Aqua Lifeforms [Barba - BAR010]",
-    "[025] Mere Mortals - Shift [Map - MAP202-2]",
-    "[028] 4E - Ask Isadora (Fit Edit) [Fit Sound - FIT-023]",
-    "[032] Sage - Orchid Dance",
-    "[035] Batu - Traverse [A Long Strange Dream - ALSD001]",
-    "[038] Ayesha - ?",
-    "[041] Black Jazz Consortium - Rebirth Groove",
-    "[053] David Alvarado - Beautification [Peacefrog - PFG010LP]",
-    "[055] Gypsy - Funk De Fino [Limbo - LIMB31T]",
-    "[060] Dashiell - This Colourful World [Pollinate - POLN02]",
-    "[064] Torei - Fish Shooter [Set Fire To Me - SFTM001]",
-    "[067] Dave Angel - Original Man [Aura Surround Sounds - AUSS 001]",
-    "[072] ?",
-    "[077] Cousin - Manta [Moonshoe - MSH011]",
-    "[080] Soichi Terada - タイムステーション / Time Station [Far East - FER06902]",
-    "[085] Olof Deijer & Mount Sims - Hybrid Fruit [Rabid - RABID090]",
-    "[093] ?",
+    "[000] Efdemin - America [Curle - 016]",
+    "[005] Temporary Permanence - Peculiar",
+    "[011] VC-118A - Elektri [Delsin - 157DSR]",
+    "[016] Grad_U - Reprise [Greyscale - GRSCL01]",
+    "[021] Submeditation - Back In Space [Cancelled - CNLD099]",
+    "[027] DJ Qu - Everybody's Dark [Soul People Music - SPMETV002]",
+    "[032] Markus Suckut - Pressure",
+    "[038] Vardae - Kaipo [OODA1]",
+    "[042] Patrice Scott - Motion Beats [Sistrum - SIS 004]",
+    "[045] Edward - Sender [Sushitech - SUSH52]",
+    "[050] Mathew Jonson - Love Letter To The Enemy [Itiswhatitis - IIWII009]",
+    "[059] Ryuichi Sakamoto - A Painful Memory [Commons]",
+    "[062] Francis Harris - Minor Forms (Valentino Mora Cosmic Trans Rephase) [Scissor And Thread - SAT034]",
+    "[068] Antias - Nordic [LDN Trax - LDV128]",
+    "[070] Kano Kanape - Goliath (Matthias Springer Remix) [Zero413 - O413LTD005]",
+    "[076] Subground 3000 - North Side [DimbiDeep - DIMBI048]",
+    "[081] Tasoko - Evoke [Dred - DREDLP001]",
+    "[084] Andrum - Underwater [Seventh Sign - 7SR026]",
+    "[089] Nick Dunton - Leaving The Planet [Surface - SF BSF 003]",
+    "[093] Tender H - Constellation [DimbiDeep - DIMBI054]",
     "[097] ?",
-    "[101] ?",
-    "[108] ?",
-    "[112] Robag Wruhme - Kapox Graphén [Tulpa Ovi - T.O.R. 006]",
-    "[114] Dub & Wheel - Judgement [Future Retro London - FR015]"
+    "[101] Andres Hellberg - Krakel [Discrete Data - DSD06]",
+    "[105] Pisetzky - Eran (Antonio Ruscito Remix) [Discrete Data - DSD06]",
+    "[109] Sterac - Satyricon [100% Pure - PURE LP 1]",
+    "[113] ?",
+    "[116] RVSHES - MTS/RHS VI [Delsin - DSR/MTS12]",
+    "[118] Hansgod - Trim Line [EP Digital Music - DPDM40.0]",
+    "[123] ?",
+    "[127] ?"
 ]
 
 
@@ -78,7 +79,6 @@ cleaned_data = clean_data(data)
 
 for d in cleaned_data:
     encoded_d = quote(d)
-
 
     payload = {'trackSearch': encoded_d}
     files = [
