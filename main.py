@@ -59,15 +59,15 @@ def write_to_json(tracklists, filename="tracklists.json"):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(tracklists, f, ensure_ascii=False, indent=4)
 
-def main():
-    artist_name = input("Enter artist name: ")
+def main(artist_name):
+    print(artist_name)
     total_track_lists = 295  # or you can dynamically find this value
     all_tracklists = []
     for offset in range(0, total_track_lists, 25):
         soup = fetch_tracklists(artist_name, offset, {})
         tracklists = parse_tracklists(soup)
         all_tracklists.extend(tracklists)
-    write_to_json(all_tracklists)
+    return all_tracklists
 
 if __name__ == "__main__":
     main()
