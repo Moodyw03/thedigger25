@@ -8,11 +8,16 @@ app = Flask(__name__)
 CORS(app)
 
 
-@app.route('/api/list', methods=['GET'])
+@app.route("/")
+def index():
+    return "Welcome to the digger!"
+
+
+@app.route("/api/list", methods=["GET"])
 def fetch_artists():
     try:
         # Access the 'artist_name' query parameter
-        artist_name = request.args.get('artist_name', 'Ben UFO')
+        artist_name = request.args.get("artist_name", "Ben UFO")
 
         # Validate artist_name if necessary
         # e.g., check if it's not empty, has valid characters, etc.
@@ -21,7 +26,9 @@ def fetch_artists():
 
         # Check if arrays is valid or has data
         if not arrays:
-            return make_response(jsonify({"error": "No data found for the given " + artist_name}), 404)
+            return make_response(
+                jsonify({"error": "No data found for the given " + artist_name}), 404
+            )
 
         return jsonify(arrays)
 
