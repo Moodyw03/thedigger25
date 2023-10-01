@@ -9,6 +9,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 total_track_lists = 0
 
+
 def build_url(artist_name, offset, other_params):
     base_url = "https://www.mixesdb.com/w/MixesDB:Explorer/Mixes"
     params = {
@@ -37,12 +38,12 @@ def build_url(artist_name, offset, other_params):
     return f"{base_url}?{query_string}"
 
 
-
 def fetch_tracklists(artist_name, offset, other_params):
     url = build_url(artist_name, offset, other_params)
     response = requests.get(url, headers=HEADERS)
     response.raise_for_status()
     return BeautifulSoup(response.content, "html.parser")
+
 
 def parse_tracklists(soup):
     tracklists = []
@@ -54,14 +55,16 @@ def parse_tracklists(soup):
             for li_tag in li_tags:
                 track_name = li_tag.text.strip()
                 track_id = clean_item(track_name)
-                tracklist.append({"track": track_name , "id": track_id})
+                tracklist.append({"track": track_name, "id": track_id})
         if tracklist:
             tracklists.append(tracklist)
     return tracklists
 
+
 def write_to_json(tracklists, filename="tracklists.json"):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(tracklists, f, ensure_ascii=False, indent=4)
+
 
 def main(artist_name):
     print("ARTIST_NAME: ", artist_name)
@@ -92,6 +95,6 @@ def main(artist_name):
     flat_tracklist = [track for sublist in all_tracklists for track in sublist]
     return flat_tracklist
 
+
 if __name__ == "__main__":
     main()
-    
