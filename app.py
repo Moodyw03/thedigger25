@@ -10,7 +10,7 @@ CORS(app)
 
 @app.route("/")
 def index():
-    return "Welcome to the digger!"
+    return "Welcome to the digger! \nNow on vercel"
 
 
 @app.route("/api/list", methods=["GET"])
