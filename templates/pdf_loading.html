@@ -3,7 +3,7 @@
 {% block title %}Generating PDF - The Digger{% endblock %}
 
 {% block head %}
-<meta http-equiv="refresh" content="1;url={{ url_for('download_tracklists_pdf', artist_name=artist_name) }}">
+<!-- Remove automatic refresh to give more control over the download process -->
 <style>
     /* Inline styles to match the brutalist design */
     @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
@@ -72,6 +72,7 @@
         margin-top: 30px;
         color: #000;
         text-transform: uppercase;
+        display: none; /* Hide success container by default */
     }
     
     .success-icon {
@@ -109,17 +110,37 @@
     .download-link:hover {
         background-color: #ffff00;
     }
+
+    /* Added styles for states */
+    .processing-state {
+        display: block;
+    }
+    
+    .downloading-state {
+        display: none;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="loading-container" id="loadingContainer">
     <h2 class="loading-title">GENERATING PDF FOR {{ artist_name|upper }}</h2>
-    <div class="loader" id="loader"></div>
-    <p class="loading-text" id="loadingText">PLEASE WAIT WHILE WE COLLECT TRACKLISTS AND GENERATE YOUR PDF...</p>
-    <p class="loading-hint" id="loadingHint">Your download should start automatically in a moment. If it doesn't, <a href="{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}" id="downloadLink" class="download-link">CLICK HERE</a>.</p>
     
-    <div class="success-container" id="successContainer">
+    <!-- Processing state (initial) -->
+    <div id="processingState" class="processing-state">
+        <div class="loader"></div>
+        <p class="loading-text">PLEASE WAIT WHILE WE COLLECT TRACKLISTS AND GENERATE YOUR PDF...</p>
+    </div>
+    
+    <!-- Downloading state -->
+    <div id="downloadingState" class="downloading-state">
+        <div class="loader"></div>
+        <p class="loading-text">YOUR PDF IS BEING DOWNLOADED...</p>
+        <p class="loading-hint">If the download doesn't start automatically, <a href="{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}" id="downloadLink" class="download-link">CLICK HERE</a>.</p>
+    </div>
+    
+    <!-- Success state -->
+    <div id="successContainer" class="success-container">
         <div class="success-icon">✓</div>
         <h3>DOWNLOAD COMPLETE</h3>
         <p>YOUR PDF WITH TRACKLISTS FOR {{ artist_name|upper }} HAS BEEN DOWNLOADED</p>
@@ -129,76 +150,100 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Get download link and elements to update
-    const downloadLink = document.getElementById('downloadLink');
-    const loadingText = document.getElementById('loadingText');
-    const loadingHint = document.getElementById('loadingHint');
-    const loader = document.getElementById('loader');
+    // Get elements
+    const processingState = document.getElementById('processingState');
+    const downloadingState = document.getElementById('downloadingState');
     const successContainer = document.getElementById('successContainer');
+    const downloadLink = document.getElementById('downloadLink');
     
-    // Function to show success state
-    function showSuccess() {
-        loader.style.display = 'none';
-        loadingHint.style.display = 'none';
-        loadingText.style.display = 'none';
-        successContainer.style.display = 'block';
+    // Track download status
+    let pdfGenerated = false;
+    let downloadInitiated = false;
+    let downloadCompleted = false;
+    
+    // Show downloading state
+    function showDownloadingState() {
+        processingState.style.display = 'none';
+        downloadingState.style.display = 'block';
+        successContainer.style.display = 'none';
+        downloadInitiated = true;
     }
     
-    // Since we can't directly detect when the file download finishes,
-    // we can track when it starts and when the user interacts with it
+    // Show success state - only shown after download has been initiated
+    function showSuccessState() {
+        if (downloadInitiated) {
+            processingState.style.display = 'none';
+            downloadingState.style.display = 'none';
+            successContainer.style.display = 'block';
+            downloadCompleted = true;
+        }
+    }
     
-    // Listen for the "blur" event on window - this often indicates that 
-    // the user has interacted with the download dialog
-    let downloadStarted = false;
-    
-    // Create a hidden iframe to track when the PDF has been generated and sent
+    // Create a hidden iframe to trigger the PDF download
     const trackingFrame = document.createElement('iframe');
     trackingFrame.style.display = 'none';
-    trackingFrame.src = "{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}";
-    document.body.appendChild(trackingFrame);
+    trackingFrame.style.position = 'absolute';
+    trackingFrame.style.left = '-9999px';
     
-    // When the iframe loads, it means the server has finished sending the PDF
+    // Set the source to the PDF download URL
+    trackingFrame.src = "{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}";
+    
+    // When the iframe finishes loading, it means the server has processed the request
     trackingFrame.onload = function() {
-        // Wait a moment to allow the download dialog to appear
+        pdfGenerated = true;
+        // Show downloading state when PDF is ready
+        showDownloadingState();
+        
+        // Only show success after a reasonable delay to ensure download has started
         setTimeout(function() {
-            downloadStarted = true;
-            loadingText.textContent = 'PDF HAS BEEN GENERATED AND DOWNLOADED';
-            showSuccess();
-        }, 1500);
+            if (!downloadCompleted) {
+                showSuccessState();
+            }
+        }, 3000); // Wait 3 seconds after download started
     };
     
-    // If user manually clicks the download link
-    downloadLink.addEventListener('click', function() {
-        // Update UI to show download started
-        loadingText.textContent = 'YOUR PDF IS DOWNLOADING...';
+    // Add iframe to document to start the process
+    document.body.appendChild(trackingFrame);
+    
+    // Handle manual download link clicks
+    downloadLink.addEventListener('click', function(e) {
+        // Don't prevent default - we want the download to happen
+        showDownloadingState();
         
-        // Mark download as started
-        downloadStarted = true;
-        
-        // Set a slightly longer delay before showing success for manual clicks
+        // Show success after a reasonable delay
         setTimeout(function() {
-            if (downloadStarted) {
-                showSuccess();
+            if (!downloadCompleted) {
+                showSuccessState();
             }
-        }, 2000);
+        }, 3000);
     });
     
-    // Listen for visibility change - when user returns to the page
-    // after dealing with the download dialog
+    // Listen for visibility changes which might indicate user interaction with download
     document.addEventListener('visibilitychange', function() {
-        if (!document.hidden && downloadStarted) {
-            showSuccess();
+        // If page becomes visible again and download was initiated but success not shown
+        if (!document.hidden && downloadInitiated && !downloadCompleted) {
+            // User likely responded to download dialog, show success
+            setTimeout(function() {
+                showSuccessState();
+            }, 1000);
         }
     });
     
-    // Safety fallback - if for some reason our detection methods fail,
-    // still show success after a reasonable time
+    // Wait for a reasonable time after page load before checking status
     setTimeout(function() {
-        if (!successContainer.style.display || successContainer.style.display === 'none') {
-            loadingText.textContent = 'YOUR PDF SHOULD HAVE DOWNLOADED BY NOW';
-            showSuccess();
+        // If processing is still showing but PDF is generated
+        if (pdfGenerated && processingState.style.display !== 'none') {
+            showDownloadingState();
         }
-    }, 8000);
+        
+        // Safety fallback - if for some reason our detection methods fail,
+        // ensure success is shown, but only after reasonable time for download to complete
+        setTimeout(function() {
+            if (!downloadCompleted) {
+                showSuccessState();
+            }
+        }, 5000);
+    }, 5000);
 });
 </script>
 {% endblock %} 
