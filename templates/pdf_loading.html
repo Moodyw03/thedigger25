@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block title %}Generating PDF - The Digger{% endblock %}
+
+{% block head %}
+<meta http-equiv="refresh" content="1;url={{ url_for('download_tracklists_pdf', artist_name=artist_name) }}">
+<style>
+    .loading-container {
+        text-align: center;
+        padding: 40px 20px;
+        max-width: 500px;
+        margin: 30px auto;
+        background-color: #f9f9f9;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .loader {
+        border: 5px solid #f3f3f3;
+        border-radius: 50%;
+        border-top: 5px solid #4285f4;
+        width: 50px;
+        height: 50px;
+        margin: 20px auto;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .loading-text {
+        margin: 20px 0;
+        font-size: 16px;
+        color: #555;
+    }
+    
+    .loading-hint {
+        font-size: 14px;
+        color: #888;
+        font-style: italic;
+        margin-top: 30px;
+    }
+    
+    .loading-title {
+        color: #333;
+        font-size: 24px;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="loading-container">
+    <h2 class="loading-title">Generating PDF for {{ artist_name }}</h2>
+    <div class="loader"></div>
+    <p class="loading-text">Please wait while we collect tracklists and generate your PDF...</p>
+    <p class="loading-hint">Your download should start automatically in a moment. If it doesn't, <a href="{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}">click here</a>.</p>
+</div>
+{% endblock %} 

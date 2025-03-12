@@ -369,6 +369,28 @@ def download_tracklists_pdf():
             500
         )
 
+@app.route("/direct_pdf_download")
+def direct_pdf_download():
+    """Generate and download a PDF directly without loading the UI."""
+    artist_name = request.args.get("artist_name", "")
+    
+    if not artist_name:
+        return render_template('index.html', 
+                              error="Please enter an artist name",
+                              year=datetime.datetime.now().year)
+    
+    try:
+        # Show loading page first
+        return render_template('pdf_loading.html', 
+                              artist_name=artist_name,
+                              year=datetime.datetime.now().year)
+    except Exception as e:
+        logger.error(f"Error processing direct PDF download for {artist_name}: {str(e)}")
+        return render_template('index.html',
+                              artist_name=artist_name,
+                              error=f"An error occurred: {str(e)}",
+                              year=datetime.datetime.now().year)
+
 def open_browser():
     """Open the browser after a short delay."""
     webbrowser.open(f"http://localhost:{PORT}")

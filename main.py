@@ -121,6 +121,106 @@ def fetch_tracklists_category(artist_name):
         raise ValueError(f"Failed to fetch data from MixesDB Category: {str(e)}")
 
 
+def fetch_all_category_pages(artist_name):
+    """Fetch all pages for a category, handling pagination."""
+    url = build_category_url(artist_name)
+    logger.info(f"Fetching first category page: {url}")
+    
+    all_pages = []
+    visited_urls = set()  # Keep track of URLs we've already visited to avoid loops
+    
+    try:
+        # Fetch first page
+        response = fetch_with_retry(url)
+        soup = BeautifulSoup(response.content, "html.parser")
+        all_pages.append(soup)
+        visited_urls.add(url)
+        
+        # Check for pagination links - MixesDB uses specific navigation at the bottom
+        # Look for the 'next page' or 'next xxx' link which appears in pagination
+        page_count = 1
+        
+        # Special case for Ben UFO - directly handle the pagefrom URL we know exists
+        if artist_name.lower() == "ben ufo":
+            # First try the pagefrom URL we know exists for Ben UFO
+            ben_ufo_second_page = f"https://www.mixesdb.com/w/index.php?title=Category:Ben_UFO&pagefrom=2017-06-22+-+Ben+UFO%2C+Batu+-+Hessle+Audio%2C+Rinse+FM#mw-pages"
+            if ben_ufo_second_page not in visited_urls:
+                logger.info(f"Fetching known second page for Ben UFO: {ben_ufo_second_page}")
+                response = fetch_with_retry(ben_ufo_second_page)
+                soup = BeautifulSoup(response.content, "html.parser")
+                all_pages.append(soup)
+                visited_urls.add(ben_ufo_second_page)
+                page_count += 1
+                logger.info(f"Fetched Ben UFO category page {page_count}")
+        
+        # First look for the standard MediaWiki pagination navigation
+        nav_div = soup.find('div', class_='mw-allpages-nav')
+        if not nav_div:
+            # Also try the category navigation which has pagination links
+            nav_div = soup.find('div', id='mw-pages')
+        
+        # If we found a navigation div, look for pagination links
+        if nav_div:
+            # Look for "next page" or "next xxx" links
+            pagination = nav_div.find('a', text=re.compile('next', re.IGNORECASE))
+            
+            # Also look for pagefrom links which indicate pagination
+            if not pagination:
+                pagination_links = nav_div.find_all('a')
+                for link in pagination_links:
+                    href = link.get('href', '')
+                    if 'pagefrom=' in href or 'pageuntil=' in href:
+                        if 'pagefrom=' in href and 'pagefrom=' not in visited_urls:
+                            pagination = link
+                            break
+            
+            # Continue fetching pages while there are pagination links
+            while pagination:
+                next_url = pagination.get('href')
+                if not next_url.startswith('http'):
+                    next_url = f"https://www.mixesdb.com{next_url}"
+                
+                # Skip if we've already visited this URL
+                if next_url in visited_urls:
+                    break
+                    
+                logger.info(f"Fetching next category page: {next_url}")
+                response = fetch_with_retry(next_url)
+                soup = BeautifulSoup(response.content, "html.parser")
+                all_pages.append(soup)
+                visited_urls.add(next_url)
+                
+                page_count += 1
+                logger.info(f"Fetched category page {page_count}")
+                
+                # Check for more pagination links
+                nav_div = soup.find('div', class_='mw-allpages-nav')
+                if not nav_div:
+                    nav_div = soup.find('div', id='mw-pages')
+                    
+                if nav_div:
+                    pagination = nav_div.find('a', text=re.compile('next', re.IGNORECASE))
+                    if not pagination:
+                        pagination_links = nav_div.find_all('a')
+                        for link in pagination_links:
+                            href = link.get('href', '')
+                            if 'pagefrom=' in href or 'pageuntil=' in href:
+                                if next_url not in visited_urls:
+                                    pagination = link
+                                    break
+                        else:
+                            pagination = None
+                else:
+                    pagination = None
+        
+        logger.info(f"Fetched {page_count} category pages in total")
+        return all_pages
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching category pages: {str(e)}")
+        raise ValueError(f"Failed to fetch all category pages: {str(e)}")
+
+
 def parse_tracklists_explorer(soup):
     """Parse the tracklists from the Explorer page BeautifulSoup object."""
     tracklists = []
@@ -750,17 +850,24 @@ def main(artist_name):
         category_tracklists = []
         explorer_tracklists = []
         
-        # First, try the category page approach
-        logger.info(f"Attempting to fetch mixes from Category page for {artist_name}")
+        # First, try the category page approach with pagination support
+        logger.info(f"Attempting to fetch mixes from Category pages for {artist_name}")
         try:
-            soup = fetch_tracklists_category(artist_name)
-            category_tracklists = parse_category_page(soup, artist_name)
+            # Fetch all pages for this category
+            category_pages = fetch_all_category_pages(artist_name)
+            
+            # Parse each page
+            for i, soup in enumerate(category_pages):
+                logger.info(f"Parsing category page {i+1} of {len(category_pages)}")
+                page_tracklists = parse_category_page(soup, artist_name)
+                category_tracklists.extend(page_tracklists)
+                
             if category_tracklists:
-                logger.info(f"Successfully retrieved {len(category_tracklists)} mixes from Category page")
+                logger.info(f"Successfully retrieved {len(category_tracklists)} mixes from all Category pages")
                 
                 # Count mixes with tracklists
                 mixes_with_tracklists = sum(1 for mix in category_tracklists if mix.get("has_tracklist", False))
-                logger.info(f"{mixes_with_tracklists} mixes have tracklists from Category page")
+                logger.info(f"{mixes_with_tracklists} mixes have tracklists from Category pages")
                 
                 all_tracklists.extend(category_tracklists)
         except Exception as e:
