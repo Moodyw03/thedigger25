@@ -245,6 +245,210 @@ def parse_category_page(soup, artist_name):
     return tracklists
 
 
+def extract_tracklist_from_text(text):
+    """Extract tracklist from raw text content by looking for patterns."""
+    tracklist = []
+    
+    # Split text into lines
+    lines = text.split('\n')
+    
+    # Keep track of consecutive track-like lines
+    track_section = False
+    track_count = 0
+    
+    # Common patterns for track listings:
+    # 1. Timestamps (00:00, 1:23, etc.)
+    # 2. Track numbers with period/dash/bracket ([01], 1., 1 -, etc.)
+    # 3. Artist - Title format
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Check if line looks like a track
+        is_track = False
+        
+        # Check for timestamp pattern
+        if re.search(r'^\d+:\d+', line):
+            is_track = True
+        # Check for numbered track pattern
+        elif re.search(r'^\[\d+\]|\d+\s*[.-]\s+|\d+\s*\)', line):
+            is_track = True
+        # Check for Resident Advisor pattern (number followed by dot and artist name)
+        elif re.search(r'^\d+\.\s*[A-Za-z]', line):
+            is_track = True
+        # Check for artist - title pattern (only if it contains a dash with spaces)
+        elif ' - ' in line and len(line) > 7:  # Minimum length to avoid false positives
+            is_track = True
+            
+        if is_track:
+            track_section = True
+            track_count += 1
+            track_id = clean_item(line)
+            tracklist.append({"track": line, "id": track_id})
+        else:
+            # If we're in a track section and find text that's not a track,
+            # check if it might be a continuation of a track
+            if track_section and track_count > 0 and len(line) < 100:  # Reasonable length for a continuation
+                # Add to the previous track if it's a continuation
+                if tracklist:
+                    prev_track = tracklist[-1]["track"]
+                    tracklist[-1]["track"] = f"{prev_track} {line}"
+                    tracklist[-1]["id"] = clean_item(tracklist[-1]["track"])
+            else:
+                # Reset track section if we encounter non-track text
+                # Only reset if we've seen a minimum number of consecutive track-like lines
+                if track_count < 2:
+                    track_section = False
+                    track_count = 0
+                    tracklist = []  # Reset if we only found 1 isolated track-like line
+                # Don't reset if we've already found multiple tracks
+    
+    # Only return tracklist if we found at least 2 tracks
+    return tracklist if len(tracklist) >= 2 else []
+
+
+def extract_tracklist_from_section(soup, section_title="Tracklist"):
+    """Extract tracklist from a section with a specific heading."""
+    tracklist = []
+    
+    # Find the section heading (commonly h2, h3, etc.)
+    headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+    section_heading = None
+    
+    for heading in headings:
+        if section_title.lower() in heading.text.strip().lower():
+            section_heading = heading
+            break
+    
+    # If we found the section heading, extract the tracklist
+    if section_heading:
+        logger.info(f"Found '{section_title}' section heading")
+        # Find the tracks that follow the heading
+        current_element = section_heading.next_sibling
+        
+        # Initialize a list to collect potential track elements
+        track_elements = []
+        
+        # Look through subsequent elements until we hit another heading or run out of siblings
+        while current_element and not (current_element.name and current_element.name.startswith('h')):
+            # Add element to our collection if it might contain track information
+            if current_element.name in ['ol', 'ul', 'p', 'div']:
+                track_elements.append(current_element)
+            current_element = current_element.next_sibling
+        
+        # First, look for ordered lists (most common for tracklists)
+        for element in track_elements:
+            if element.name == 'ol':
+                li_tags = element.find_all('li')
+                for li_tag in li_tags:
+                    track_name = li_tag.text.strip()
+                    if track_name and not track_name.startswith("?"):
+                        track_id = clean_item(track_name)
+                        tracklist.append({"track": track_name, "id": track_id})
+                
+                # If we found tracks in this list, we're done
+                if tracklist:
+                    logger.info(f"Extracted {len(tracklist)} tracks from ordered list after '{section_title}' heading")
+                    return tracklist
+        
+        # If no ordered list with tracks, try unordered lists
+        if not tracklist:
+            for element in track_elements:
+                if element.name == 'ul':
+                    li_tags = element.find_all('li')
+                    for li_tag in li_tags:
+                        track_name = li_tag.text.strip()
+                        if track_name and not track_name.startswith("?"):
+                            track_id = clean_item(track_name)
+                            tracklist.append({"track": track_name, "id": track_id})
+                    
+                    if tracklist:
+                        logger.info(f"Extracted {len(tracklist)} tracks from unordered list after '{section_title}' heading")
+                        return tracklist
+        
+        # If still no tracklist, try paragraphs and divs
+        if not tracklist:
+            # Combine text from all elements and check for track-like patterns
+            combined_text = ""
+            for element in track_elements:
+                if element.name in ['p', 'div']:
+                    combined_text += element.text.strip() + "\n"
+            
+            if combined_text:
+                tracks_from_text = extract_tracklist_from_text(combined_text)
+                if tracks_from_text:
+                    logger.info(f"Extracted {len(tracks_from_text)} tracks from text content after '{section_title}' heading")
+                    return tracks_from_text
+    
+    return tracklist
+
+
+def extract_resident_advisor_tracklist(soup):
+    """Extract tracklist specifically from Resident Advisor format pages."""
+    tracklist = []
+    
+    # Look for a div containing the tracklist
+    content_div = soup.find("div", id="mw-content-text")
+    if not content_div:
+        return tracklist
+    
+    # Find all paragraphs in the content area
+    p_tags = content_div.find_all("p")
+    
+    # Check for Resident Advisor's tracklist format
+    found_tracklist_header = False
+    current_track_section = []
+    
+    for p in p_tags:
+        text = p.text.strip()
+        
+        # Skip empty paragraphs
+        if not text:
+            continue
+            
+        # Look for "Tracklist" header
+        if 'tracklist' in text.lower() and not found_tracklist_header:
+            found_tracklist_header = True
+            continue
+            
+        # If we found the tracklist header, start collecting tracks
+        if found_tracklist_header:
+            # Stop if we hit another section
+            if re.match(r'^[A-Z][a-z]+:', text) and not re.match(r'^\d+\.', text):
+                break
+                
+            # Process the paragraph as potential tracks
+            # Resident Advisor typically has track listings in "1. Artist - Title" format
+            if re.search(r'^\d+\.', text) or ' - ' in text:
+                # This might be a list of tracks in a single paragraph
+                lines = text.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line:
+                        current_track_section.append(line)
+    
+    # Process tracks with numbers (e.g., "1. Artist - Track")
+    numbered_pattern = re.compile(r'(\d+)\.\s*(.*)')
+    
+    # Process the collected track section
+    for line in current_track_section:
+        match = numbered_pattern.match(line)
+        if match:
+            # This is a numbered track
+            track_name = match.group(2).strip()
+            if track_name:
+                track_id = clean_item(track_name)
+                tracklist.append({"track": track_name, "id": track_id})
+        elif ' - ' in line:
+            # This might be an unnumbered "Artist - Title" format
+            track_id = clean_item(line)
+            tracklist.append({"track": line, "id": track_id})
+    
+    logger.info(f"Extracted {len(tracklist)} tracks from Resident Advisor format")
+    return tracklist
+
+
 def fetch_mix_tracklist(mix_url):
     """Fetch and parse the tracklist from an individual mix page."""
     logger.info(f"Fetching mix tracklist from: {mix_url}")
@@ -254,6 +458,19 @@ def fetch_mix_tracklist(mix_url):
         response = fetch_with_retry(mix_url)
         soup = BeautifulSoup(response.content, "html.parser")
         
+        # Special case for Resident Advisor mixes
+        if "Resident_Advisor" in mix_url or "RA." in mix_url:
+            logger.info("Detected Resident Advisor format, using specialized extraction")
+            tracklist = extract_resident_advisor_tracklist(soup)
+            if tracklist:
+                return tracklist
+        
+        # First, try to extract tracklist from a section with "Tracklist" heading
+        tracklist = extract_tracklist_from_section(soup, "Tracklist")
+        if tracklist:
+            logger.info(f"Successfully extracted {len(tracklist)} tracks from Tracklist section")
+            return tracklist
+            
         # Find the tracklist section - typically in a div with class "tracklist"
         tracklist_div = soup.find("div", class_="tracklist")
         if tracklist_div:
@@ -275,34 +492,91 @@ def fetch_mix_tracklist(mix_url):
         
         # If no tracks found in the tracklist div, try alternative methods
         if not tracklist:
+            # Look for any "## Tracklist" or similar markdown-style headers
+            for h_tag in soup.find_all(['h1', 'h2', 'h3', 'h4']):
+                if 'tracklist' in h_tag.text.lower():
+                    next_element = h_tag.find_next_sibling()
+                    if next_element and next_element.name == 'ol':
+                        for li in next_element.find_all('li'):
+                            track_name = li.text.strip()
+                            if track_name:
+                                track_id = clean_item(track_name)
+                                tracklist.append({"track": track_name, "id": track_id})
+                        if tracklist:
+                            logger.info(f"Found {len(tracklist)} tracks after header '{h_tag.text}'")
+                            break
+            
+            # Check for SoundCloud tracklist - often present near iframes or in paragraphs
+            if not tracklist and soup.find("iframe", src=lambda x: x and "soundcloud.com" in x):
+                iframe_soundcloud = soup.find("iframe", src=lambda x: x and "soundcloud.com" in x)
+                logger.info("Found SoundCloud embed, looking for tracklist nearby")
+                # Look for tracklist in paragraphs near the SoundCloud iframe
+                parent = iframe_soundcloud.parent
+                # Check paragraphs after the iframe
+                next_elements = list(parent.next_siblings)
+                for element in next_elements:
+                    if element.name == 'p':
+                        text_content = element.text.strip()
+                        tracks_from_text = extract_tracklist_from_text(text_content)
+                        if tracks_from_text:
+                            tracklist.extend(tracks_from_text)
+                    # Also check divs that might contain track listings
+                    elif element.name == 'div':
+                        text_content = element.text.strip()
+                        tracks_from_text = extract_tracklist_from_text(text_content)
+                        if tracks_from_text:
+                            tracklist.extend(tracks_from_text)
+            
+            # Check paragraphs that might contain tracklists
+            if not tracklist:
+                # Look for paragraphs that contain the word "tracklist"
+                tracklist_headers = soup.find_all(string=lambda text: text and "tracklist" in text.lower())
+                for header in tracklist_headers:
+                    element = header.parent
+                    # Check next siblings for track-like content
+                    for sibling in element.next_siblings:
+                        if hasattr(sibling, 'text'):
+                            text_content = sibling.text.strip()
+                            tracks_from_text = extract_tracklist_from_text(text_content)
+                            if tracks_from_text:
+                                tracklist.extend(tracks_from_text)
+                                break  # Found the tracklist, no need to check more siblings
+            
+            # Check all paragraphs for track-like content
+            if not tracklist:
+                p_tags = soup.find_all('p')
+                for p in p_tags:
+                    text_content = p.text.strip()
+                    tracks_from_text = extract_tracklist_from_text(text_content)
+                    if tracks_from_text:
+                        tracklist.extend(tracks_from_text)
+                        break  # Found a tracklist, stop searching
+
             # Sometimes tracklists are in table format
-            tables = soup.find_all("table", class_="wikitable")
-            for table in tables:
-                rows = table.find_all("tr")
-                for row in rows:
-                    # Skip header rows
-                    if row.find("th"):
-                        continue
-                    
-                    cols = row.find_all("td")
-                    if cols and len(cols) >= 2:  # Typical format: Track number, Track name
-                        track_name = cols[1].text.strip()
-                        if track_name and not track_name.startswith("?"):
-                            track_id = clean_item(track_name)
-                            tracklist.append({"track": track_name, "id": track_id})
+            if not tracklist:
+                tables = soup.find_all("table", class_="wikitable")
+                for table in tables:
+                    rows = table.find_all("tr")
+                    for row in rows:
+                        # Skip header rows
+                        if row.find("th"):
+                            continue
+                        
+                        cols = row.find_all("td")
+                        if cols and len(cols) >= 2:  # Typical format: Track number, Track name
+                            track_name = cols[1].text.strip()
+                            if track_name and not track_name.startswith("?"):
+                                track_id = clean_item(track_name)
+                                tracklist.append({"track": track_name, "id": track_id})
             
             # Try pre tags if still no tracks found
             if not tracklist:
                 pre_tags = soup.find_all("pre")
                 for pre_tag in pre_tags:
-                    text = pre_tag.text.strip()
-                    if text:
-                        lines = text.split('\n')
-                        for line in lines:
-                            line = line.strip()
-                            if line and line.lower() != "tracklist" and not line.startswith("?"):
-                                track_id = clean_item(line)
-                                tracklist.append({"track": line, "id": track_id})
+                    text_content = pre_tag.text.strip()
+                    tracks_from_text = extract_tracklist_from_text(text_content)
+                    if tracks_from_text:
+                        tracklist.extend(tracks_from_text)
                 
                 # Try parsing from any ol lists that might contain the tracklist
                 if not tracklist:
@@ -318,8 +592,45 @@ def fetch_mix_tracklist(mix_url):
                             if track_name and not track_name.startswith("?"):
                                 track_id = clean_item(track_name)
                                 tracklist.append({"track": track_name, "id": track_id})
+                
+                # Look for divs with class "track" which sometimes contain track information
+                if not tracklist:
+                    track_divs = soup.find_all("div", class_=lambda x: x and "track" in x.lower())
+                    for div in track_divs:
+                        track_name = div.text.strip()
+                        if track_name and not track_name.startswith("?"):
+                            track_id = clean_item(track_name)
+                            tracklist.append({"track": track_name, "id": track_id})
+                
+                # Last resort: look for any text with track-like patterns in the main content div
+                if not tracklist:
+                    content_div = soup.find("div", id="mw-content-text")
+                    if content_div:
+                        text_content = content_div.get_text()
+                        tracks_from_text = extract_tracklist_from_text(text_content)
+                        if tracks_from_text:
+                            tracklist.extend(tracks_from_text)
         
+        # Clean up the tracklist to remove duplicates and validate entries
         if tracklist:
+            # Remove duplicates while preserving order
+            seen = set()
+            tracklist = [x for x in tracklist if not (x['track'] in seen or seen.add(x['track']))]
+            
+            # Further filter out non-track items
+            filtered_tracklist = []
+            for item in tracklist:
+                track = item['track']
+                # Skip items that are just numbers or very short strings
+                if re.match(r'^\d+$', track) or len(track) < 4:
+                    continue
+                # Skip items that are just categories or headers
+                if track.lower() in ['tracklist', 'tracks', 'track list', 'setlist', 'set list', 'playlist']:
+                    continue
+                filtered_tracklist.append(item)
+            
+            tracklist = filtered_tracklist
+            
             logger.info(f"Found a total of {len(tracklist)} tracks for the mix")
         else:
             logger.info("No tracklist found for this mix")
