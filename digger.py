@@ -356,9 +356,14 @@ def download_tracklists_pdf():
         buffer.seek(0)
         
         # Create a response with the PDF
+        filename = f"tracklists_{artist_name.replace(' ', '_')}.pdf"
         response = make_response(buffer.getvalue())
         response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename=tracklists_{artist_name.replace(" ", "_")}.pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        # Add headers to prevent caching to ensure the download always completes
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
         
         return response
         

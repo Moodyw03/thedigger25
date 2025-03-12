@@ -48,14 +48,128 @@
         font-size: 24px;
         margin-bottom: 20px;
     }
+    
+    .success-container {
+        display: none;
+        background-color: #eaf7ea;
+        border: 1px solid #a3d9a3;
+        border-radius: 8px;
+        padding: 15px;
+        margin-top: 20px;
+        color: #2c7d2c;
+    }
+    
+    .success-icon {
+        font-size: 36px;
+        margin-bottom: 10px;
+    }
+    
+    .back-button {
+        display: inline-block;
+        background-color: #4285f4;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 8px 16px;
+        margin-top: 15px;
+        text-decoration: none;
+        font-weight: 500;
+        transition: background-color 0.2s;
+    }
+    
+    .back-button:hover {
+        background-color: #3367d6;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="loading-container">
+<div class="loading-container" id="loadingContainer">
     <h2 class="loading-title">Generating PDF for {{ artist_name }}</h2>
-    <div class="loader"></div>
-    <p class="loading-text">Please wait while we collect tracklists and generate your PDF...</p>
-    <p class="loading-hint">Your download should start automatically in a moment. If it doesn't, <a href="{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}">click here</a>.</p>
+    <div class="loader" id="loader"></div>
+    <p class="loading-text" id="loadingText">Please wait while we collect tracklists and generate your PDF...</p>
+    <p class="loading-hint" id="loadingHint">Your download should start automatically in a moment. If it doesn't, <a href="{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}" id="downloadLink">click here</a>.</p>
+    
+    <div class="success-container" id="successContainer">
+        <div class="success-icon">✓</div>
+        <h3>Download Complete!</h3>
+        <p>Your PDF file with tracklists for {{ artist_name }} has been successfully downloaded.</p>
+        <a href="{{ url_for('index') }}" class="back-button">Back to Home</a>
+    </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Get download link and elements to update
+    const downloadLink = document.getElementById('downloadLink');
+    const loadingText = document.getElementById('loadingText');
+    const loadingHint = document.getElementById('loadingHint');
+    const loader = document.getElementById('loader');
+    const successContainer = document.getElementById('successContainer');
+    
+    // Function to show success state
+    function showSuccess() {
+        loader.style.display = 'none';
+        loadingHint.style.display = 'none';
+        loadingText.style.display = 'none';
+        successContainer.style.display = 'block';
+    }
+    
+    // Since we can't directly detect when the file download finishes,
+    // we can track when it starts and when the user interacts with it
+    
+    // Listen for the "blur" event on window - this often indicates that 
+    // the user has interacted with the download dialog
+    let downloadStarted = false;
+    
+    // Create a hidden iframe to track when the PDF has been generated and sent
+    const trackingFrame = document.createElement('iframe');
+    trackingFrame.style.display = 'none';
+    trackingFrame.src = "{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}";
+    document.body.appendChild(trackingFrame);
+    
+    // When the iframe loads, it means the server has finished sending the PDF
+    trackingFrame.onload = function() {
+        // Wait a moment to allow the download dialog to appear
+        setTimeout(function() {
+            downloadStarted = true;
+            loadingText.textContent = 'Your PDF has been generated and downloaded';
+            showSuccess();
+        }, 1500);
+    };
+    
+    // If user manually clicks the download link
+    downloadLink.addEventListener('click', function() {
+        // Update UI to show download started
+        loadingText.textContent = 'Your PDF is downloading...';
+        
+        // Mark download as started
+        downloadStarted = true;
+        
+        // Set a slightly longer delay before showing success for manual clicks
+        setTimeout(function() {
+            if (downloadStarted) {
+                showSuccess();
+            }
+        }, 2000);
+    });
+    
+    // Listen for visibility change - when user returns to the page
+    // after dealing with the download dialog
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden && downloadStarted) {
+            showSuccess();
+        }
+    });
+    
+    // Safety fallback - if for some reason our detection methods fail,
+    // still show success after a reasonable time
+    setTimeout(function() {
+        if (!successContainer.style.display || successContainer.style.display === 'none') {
+            loadingText.textContent = 'Your PDF should have downloaded by now';
+            showSuccess();
+        }
+    }, 8000);
+});
+</script>
 {% endblock %} 
