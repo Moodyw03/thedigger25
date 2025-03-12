@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Digger - Debug Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .debug-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .debug-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .debug-output {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+        .player-container {
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>The Digger - Debug Page</h1>
+    
+    <div class="debug-section">
+        <div class="debug-title">YouTube API Status</div>
+        <div id="youtube-status" class="debug-output">Checking...</div>
+    </div>
+    
+    <div class="debug-section">
+        <div class="debug-title">Test Video Player</div>
+        <button id="test-video-btn">Test Fixed Video ID</button>
+        <button id="test-search-btn">Test Search API</button>
+        <div id="search-status" class="debug-output"></div>
+        <div id="player-container" class="player-container"></div>
+    </div>
+    
+    <div class="debug-section">
+        <div class="debug-title">Console Output</div>
+        <div id="console-output" class="debug-output"></div>
+    </div>
+    
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        // Log to both console and our debug output
+        function debugLog(message) {
+            console.log(message);
+            const consoleOutput = document.getElementById('console-output');
+            const logLine = document.createElement('div');
+            logLine.textContent = new Date().toLocaleTimeString() + ': ' + message;
+            consoleOutput.appendChild(logLine);
+        }
+        
+        let player = null;
+        let youtubeReady = false;
+        
+        // YouTube API ready callback
+        window.onYouTubeIframeAPIReady = function() {
+            youtubeReady = true;
+            document.getElementById('youtube-status').textContent = 'YouTube API Ready ✓';
+            debugLog('YouTube API is ready');
+        };
+        
+        // Create YouTube player
+        function createPlayer(videoId) {
+            if (!youtubeReady) {
+                debugLog('YouTube API not ready yet');
+                return;
+            }
+            
+            debugLog('Creating player for video ID: ' + videoId);
+            
+            // Clear any existing player
+            if (player) {
+                player.destroy();
+                player = null;
+            }
+            
+            const playerContainer = document.getElementById('player-container');
+            playerContainer.innerHTML = '';
+            
+            const playerElement = document.createElement('div');
+            playerContainer.appendChild(playerElement);
+            
+            player = new YT.Player(playerElement, {
+                height: '200',
+                width: '300',
+                videoId: videoId,
+                playerVars: {
+                    'autoplay': 1,
+                    'modestbranding': 1,
+                    'start': 120
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange,
+                    'onError': onPlayerError
+                }
+            });
+        }
+        
+        // Player ready event
+        function onPlayerReady(event) {
+            debugLog('Player ready event. Playing video...');
+            event.target.playVideo();
+        }
+        
+        // Player state change event
+        function onPlayerStateChange(event) {
+            const stateNames = {
+                '-1': 'UNSTARTED',
+                '0': 'ENDED',
+                '1': 'PLAYING',
+                '2': 'PAUSED',
+                '3': 'BUFFERING',
+                '5': 'CUED'
+            };
+            
+            const stateName = stateNames[event.data] || 'UNKNOWN';
+            debugLog('Player state changed to: ' + stateName + ' (' + event.data + ')');
+        }
+        
+        // Player error event
+        function onPlayerError(event) {
+            const errorCodes = {
+                2: 'Invalid parameter',
+                5: 'HTML5 player error',
+                100: 'Video not found or removed',
+                101: 'Video embedding not allowed',
+                150: 'Video embedding not allowed'
+            };
+            
+            const errorMessage = errorCodes[event.data] || 'Unknown error';
+            debugLog('Player error: ' + errorMessage + ' (Code: ' + event.data + ')');
+        }
+        
+        // Test with a fixed video ID
+        document.getElementById('test-video-btn').addEventListener('click', function() {
+            createPlayer('dQw4w9WgXcQ'); // Never Gonna Give You Up
+        });
+        
+        // Test with the search API
+        document.getElementById('test-search-btn').addEventListener('click', function() {
+            const testQuery = 'ben ufo test track';
+            document.getElementById('search-status').textContent = 'Searching for: ' + testQuery;
+            
+            fetch('/search_video?query=' + encodeURIComponent(testQuery))
+                .then(response => response.json())
+                .then(data => {
+                    if (data.videoId) {
+                        document.getElementById('search-status').textContent = 'Found video ID: ' + data.videoId;
+                        debugLog('Search API returned video ID: ' + data.videoId);
+                        createPlayer(data.videoId);
+                    } else {
+                        document.getElementById('search-status').textContent = 'Error: ' + (data.error || 'No video found');
+                        debugLog('Search API error: ' + (data.error || 'No video found'));
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('search-status').textContent = 'Fetch error: ' + error.message;
+                    debugLog('Fetch error: ' + error.message);
+                });
+        });
+    </script>
+</body>
+</html> 

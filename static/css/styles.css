@@ -1,0 +1,84 @@
+/* Audio player controls */
+.audio-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 5px;
+}
+
+.control-btn {
+    cursor: pointer;
+    user-select: none;
+    font-size: 18px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.time-display {
+    font-family: monospace;
+    min-width: 40px;
+    position: relative;
+}
+
+.time-display.loading::after {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-left: 5px;
+    border-radius: 50%;
+    border: 2px solid #ccc;
+    border-top-color: #3498db;
+    animation: spin 1s infinite linear;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.youtube-link {
+    color: #ff0000;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.youtube-link:hover {
+    opacity: 1;
+}
+
+.youtube-icon {
+    width: 20px;
+    height: 20px;
+}
+
+.inline-player-container {
+    background-color: #f8f8f8;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.inline-player-container:hover {
+    background-color: #f0f0f0;
+}
+
+.player-controls {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Track list styling */
+.track-item {
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+} 
