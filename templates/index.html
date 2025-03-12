@@ -18,38 +18,91 @@
 
 {% if tracks %}
 <div class="results-section">
-    <h2>Tracks for {{ artist_name }}</h2>
-    <p>Found {{ tracks|length }} tracks</p>
+    <h2>Tracklists for {{ artist_name }}</h2>
     
-    <ol class="track-list">
-        {% for track in tracks %}
-        <li class="track-item">
-            <div class="track-info">
-                <span class="track-name">{{ track.track }}</span>
-                <button class="play-button" data-track="{{ track.track|urlencode }}" title="Play track">
-                    <span class="play-icon">▶</span> Play
-                </button>
-            </div>
-            <!-- Inline player will be inserted here when track is played -->
-            <div class="inline-player-container" style="display: none;">
-                <div class="player-controls">
-                    <div class="audio-controls">
-                        <span class="control-btn play-pause-btn">⏸</span>
-                        <span class="time-display">0:00</span>
-                        <a href="#" class="youtube-link" target="_blank" title="View on YouTube">
-                            <svg class="youtube-icon" viewBox="0 0 24 24" width="18" height="18">
-                                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="currentColor"/>
-                            </svg>
-                        </a>
-                    </div>
-                    <div class="youtube-player-wrapper">
-                        <!-- YouTube player will be inserted here -->
-                    </div>
+    {% set total_tracks = 0 %}
+    {% set mixes_with_tracklists = 0 %}
+    {% for mix in tracks %}
+        {% if mix.has_tracklist %}
+            {% set mixes_with_tracklists = mixes_with_tracklists + 1 %}
+            {% set total_tracks = total_tracks + mix.tracks|length %}
+        {% endif %}
+    {% endfor %}
+    
+    <p>Found {{ total_tracks }} tracks across {{ mixes_with_tracklists }} mixes with tracklists ({{ tracks|length }} total mixes)</p>
+    
+    <div class="filters">
+        <label>
+            <input type="checkbox" id="show-all-mixes" checked>
+            Show mixes without tracklists
+        </label>
+    </div>
+    
+    <div class="mixes-container">
+        {% for mix in tracks %}
+        <div class="mix-section {% if not mix.has_tracklist %}mix-no-tracklist{% endif %}">
+            <div class="mix-header">
+                <h3 class="mix-title">
+                    {{ mix.title }}
+                    {% if mix.date %}
+                    <span class="mix-date">({{ mix.date }})</span>
+                    {% endif %}
+                </h3>
+                
+                <div class="mix-badges">
+                    {% if mix.has_tracklist %}
+                    <span class="tracklist-badge">{{ mix.tracks|length }} tracks</span>
+                    {% else %}
+                    <span class="no-tracklist-badge">No tracklist available</span>
+                    {% endif %}
                 </div>
             </div>
-        </li>
+            
+            <div class="mix-actions">
+                {% if mix.url %}
+                <a href="{{ mix.url }}" class="mix-link" target="_blank">View on MixesDB</a>
+                {% endif %}
+            </div>
+            
+            {% if mix.has_tracklist %}
+            <div class="tracklist-container">
+                <h4 class="tracklist-header">Tracklist:</h4>
+                <ol class="track-list">
+                    {% for track in mix.tracks %}
+                    <li class="track-item">
+                        <div class="track-info">
+                            <span class="track-name">{{ track.track }}</span>
+                            <button class="play-button" data-track="{{ track.track|urlencode }}" title="Play track">
+                                <span class="play-icon">▶</span> Play
+                            </button>
+                        </div>
+                        <!-- Inline player will be inserted here when track is played -->
+                        <div class="inline-player-container" style="display: none;">
+                            <div class="player-controls">
+                                <div class="audio-controls">
+                                    <span class="control-btn play-pause-btn">⏸</span>
+                                    <span class="time-display">0:00</span>
+                                    <a href="#" class="youtube-link" target="_blank" title="View on YouTube">
+                                        <svg class="youtube-icon" viewBox="0 0 24 24" width="18" height="18">
+                                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="currentColor"/>
+                                        </svg>
+                                    </a>
+                                </div>
+                                <div class="youtube-player-wrapper">
+                                    <!-- YouTube player will be inserted here -->
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ol>
+            </div>
+            {% else %}
+            <p class="no-tracks-message">No tracklist is available for this mix.</p>
+            {% endif %}
+        </div>
         {% endfor %}
-    </ol>
+    </div>
 </div>
 {% endif %}
 {% endblock %}
@@ -74,6 +127,17 @@ document.addEventListener('DOMContentLoaded', function() {
     searchInput.addEventListener('click', function() {
         this.select();
     });
+
+    // Filter checkbox for mixes without tracklists
+    const showAllMixesCheckbox = document.getElementById('show-all-mixes');
+    if (showAllMixesCheckbox) {
+        showAllMixesCheckbox.addEventListener('change', function() {
+            const noTracklistMixes = document.querySelectorAll('.mix-no-tracklist');
+            noTracklistMixes.forEach(mix => {
+                mix.style.display = this.checked ? 'block' : 'none';
+            });
+        });
+    }
 
     // YouTube player variables
     let currentPlayer = null;

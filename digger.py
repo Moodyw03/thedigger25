@@ -59,9 +59,9 @@ def search():
     
     try:
         logger.info(f"Searching for artist: {artist_name}")
-        tracks = main(artist_name)
+        mixes = main(artist_name)
         
-        if not tracks:
+        if not mixes:
             return render_template('index.html',
                                   artist_name=artist_name,
                                   error=f"No tracklists found for '{artist_name}'",
@@ -69,7 +69,7 @@ def search():
         
         return render_template('index.html',
                               artist_name=artist_name,
-                              tracks=tracks,
+                              tracks=mixes,
                               year=datetime.datetime.now().year)
     
     except Exception as e:

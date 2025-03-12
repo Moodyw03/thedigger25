@@ -2,8 +2,9 @@ import requests
 import json
 import logging
 import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 from bs4 import BeautifulSoup
+import re
 
 from clean_item import clean_item
 
@@ -12,16 +13,21 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
-BASE_URL = "https://www.mixesdb.com/w/MixesDB:Explorer/Mixes"
+# Base URL for the Explorer endpoint
+EXPLORER_BASE_URL = "https://www.mixesdb.com/w/MixesDB:Explorer/Mixes"
+# Base URL for the Category pages
+CATEGORY_BASE_URL = "https://www.mixesdb.com/w/Category:"
 
 # Request configuration
 REQUEST_TIMEOUT = 20  # Increased from 10 to 20 seconds
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds between retries
+# Increase the max fetch limit
+MAX_FETCH_LIMIT = 300  # Increased from 100 to 300
 
 
-def build_url(artist_name, offset, other_params):
-    """Build the URL for the MixesDB request."""
+def build_explorer_url(artist_name, offset, other_params):
+    """Build the URL for the MixesDB Explorer request."""
     params = {
         "do": "mx",
         "mode": "",
@@ -30,8 +36,8 @@ def build_url(artist_name, offset, other_params):
         "jnC": "",
         "style": "",
         "year": "",
-        "tlC": "1",
-        "tlI": "1",
+        "tlC": "",
+        "tlI": "",
         "so": "",
         "tmatch1": "",
         "tmatch2": "",
@@ -42,10 +48,23 @@ def build_url(artist_name, offset, other_params):
         "order": "name",
         "sort": "desc",
         "offset": str(offset),
-        **other_params
     }
+    
+    # Update with any additional parameters
+    if other_params:
+        params.update(other_params)
+    
     query_string = urlencode(params)
-    return f"{BASE_URL}?{query_string}"
+    return f"{EXPLORER_BASE_URL}?{query_string}"
+
+
+def build_category_url(artist_name):
+    """Build the URL for the MixesDB Category page."""
+    # Replace spaces with hyphens and handle special characters
+    formatted_name = artist_name.replace(' ', '-')
+    # URL encode the artist name
+    encoded_name = quote(formatted_name)
+    return f"{CATEGORY_BASE_URL}{encoded_name}"
 
 
 def fetch_with_retry(url, max_retries=MAX_RETRIES, retry_delay=RETRY_DELAY):
@@ -66,21 +85,34 @@ def fetch_with_retry(url, max_retries=MAX_RETRIES, retry_delay=RETRY_DELAY):
                 raise
 
 
-def fetch_tracklists(artist_name, offset, other_params):
-    """Fetch tracklists from MixesDB."""
-    url = build_url(artist_name, offset, other_params)
-    logger.info(f"Fetching URL: {url}")
+def fetch_tracklists_explorer(artist_name, offset, other_params):
+    """Fetch tracklists from MixesDB Explorer page."""
+    url = build_explorer_url(artist_name, offset, other_params)
+    logger.info(f"Fetching Explorer URL: {url}")
     
     try:
         response = fetch_with_retry(url)
         return BeautifulSoup(response.content, "html.parser")
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching tracklists: {str(e)}")
-        raise ValueError(f"Failed to fetch data from MixesDB: {str(e)}")
+        logger.error(f"Error fetching Explorer tracklists: {str(e)}")
+        raise ValueError(f"Failed to fetch data from MixesDB Explorer: {str(e)}")
 
 
-def parse_tracklists(soup):
-    """Parse the tracklists from the BeautifulSoup object."""
+def fetch_tracklists_category(artist_name):
+    """Fetch tracklists from MixesDB Category page."""
+    url = build_category_url(artist_name)
+    logger.info(f"Fetching Category URL: {url}")
+    
+    try:
+        response = fetch_with_retry(url)
+        return BeautifulSoup(response.content, "html.parser")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching Category tracklists: {str(e)}")
+        raise ValueError(f"Failed to fetch data from MixesDB Category: {str(e)}")
+
+
+def parse_tracklists_explorer(soup):
+    """Parse the tracklists from the Explorer page BeautifulSoup object."""
     tracklists = []
     
     # Find all explorer result sections
@@ -88,6 +120,31 @@ def parse_tracklists(soup):
     logger.info(f"Found {len(explorer_results)} explorer results")
     
     for explorerResult in explorer_results:
+        # Extract mix title and date
+        mix_info = {}
+        title_element = explorerResult.find("div", class_="explorerTitle")
+        
+        if title_element:
+            # Find the mix title - it's usually in an <a> tag inside the title div
+            title_link = title_element.find("a")
+            if title_link:
+                mix_info["title"] = title_link.text.strip()
+                # Save the mix URL for potential future use
+                mix_info["url"] = title_link.get("href", "")
+                if mix_info["url"] and not mix_info["url"].startswith("http"):
+                    mix_info["url"] = f"https://www.mixesdb.com{mix_info['url']}"
+            
+            # Try to find the date - it's usually in parentheses in the title div text
+            date_text = title_element.text
+            date_match = re.search(r'\(([^)]+)\)', date_text)
+            if date_match:
+                mix_info["date"] = date_match.group(1).strip()
+            else:
+                mix_info["date"] = "Unknown date"
+        
+        if not mix_info.get("title"):
+            mix_info["title"] = "Untitled Mix"
+            
         tracklist = []
         ol_tags = explorerResult.find_all("ol")
         
@@ -98,28 +155,187 @@ def parse_tracklists(soup):
                 track_id = clean_item(track_name)
                 tracklist.append({"track": track_name, "id": track_id})
         
-        if tracklist:
-            tracklists.append(tracklist)
+        # Add mix info to the tracklist, even if the tracklist is empty
+        tracklists.append({
+            "title": mix_info.get("title", "Untitled Mix"),
+            "date": mix_info.get("date", "Unknown date"),
+            "url": mix_info.get("url", ""),
+            "tracks": tracklist,
+            "has_tracklist": len(tracklist) > 0
+        })
     
     return tracklists
 
 
-def write_to_json(tracklists, filename="tracklists.json"):
-    """Write tracklists to a JSON file."""
-    try:
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(tracklists, f, ensure_ascii=False, indent=4)
-        logger.info(f"Successfully wrote tracklists to {filename}")
-    except Exception as e:
-        logger.error(f"Error writing to JSON file: {str(e)}")
+def parse_category_page(soup, artist_name):
+    """Parse the Category page to find all mixes and their details."""
+    tracklists = []
+    
+    # The content area typically has the mixes listed
+    content_div = soup.find("div", id="mw-content-text")
+    if not content_div:
+        logger.warning(f"Could not find content div on category page for {artist_name}")
+        return tracklists
+    
+    # Find all unordered lists that might contain mixes
+    ul_tags = content_div.find_all("ul")
+    
+    # Track if we found any mixes
+    found_mixes = False
+    
+    for ul_tag in ul_tags:
+        # Find all list items
+        li_tags = ul_tag.find_all("li")
+        for li_tag in li_tags:
+            # Each list item typically contains a link to a mix
+            link = li_tag.find("a")
+            if not link:
+                continue
+                
+            mix_title = link.text.strip()
+            mix_url = link.get("href", "")
+            if mix_url and not mix_url.startswith("http"):
+                mix_url = f"https://www.mixesdb.com{mix_url}"
+            
+            # Try to find the date in the text or list item content
+            date = "Unknown date"
+            date_match = re.search(r'\((\d{1,2}(?:st|nd|rd|th)? [A-Za-z]+,? \d{4})\)', li_tag.text)
+            if date_match:
+                date = date_match.group(1).strip()
+            else:
+                # Try another date format
+                date_match = re.search(r'\((\d{4}-\d{2}-\d{2})\)', li_tag.text)
+                if date_match:
+                    date = date_match.group(1).strip()
+            
+            # We'll need to fetch the individual mix page to get the tracklist
+            try:
+                tracklist = fetch_mix_tracklist(mix_url)
+                found_mixes = True
+                
+                # Add the mix regardless of whether it has a tracklist or not
+                tracklists.append({
+                    "title": mix_title,
+                    "date": date,
+                    "url": mix_url,
+                    "tracks": tracklist,
+                    "has_tracklist": len(tracklist) > 0
+                })
+                
+                if tracklist:
+                    logger.info(f"Added mix: {mix_title} with {len(tracklist)} tracks")
+                else:
+                    logger.info(f"Added mix: {mix_title} (no tracklist available)")
+                
+            except Exception as e:
+                logger.warning(f"Error fetching tracklist for mix {mix_title}: {str(e)}")
+                # Still add the mix even if there was an error fetching the tracklist
+                tracklists.append({
+                    "title": mix_title,
+                    "date": date,
+                    "url": mix_url,
+                    "tracks": [],
+                    "has_tracklist": False
+                })
+                logger.info(f"Added mix: {mix_title} (error fetching tracklist)")
+    
+    if not found_mixes:
+        logger.warning(f"No mixes found in category page for {artist_name}")
+    
+    return tracklists
 
 
-def get_total_track_lists(artist_name):
-    """Get the total number of tracklists for an artist."""
-    url = build_url(artist_name, 0, {})
+def fetch_mix_tracklist(mix_url):
+    """Fetch and parse the tracklist from an individual mix page."""
+    logger.info(f"Fetching mix tracklist from: {mix_url}")
+    tracklist = []
     
     try:
-        logger.info(f"Fetching total number of tracks for {artist_name}")
+        response = fetch_with_retry(mix_url)
+        soup = BeautifulSoup(response.content, "html.parser")
+        
+        # Find the tracklist section - typically in a div with class "tracklist"
+        tracklist_div = soup.find("div", class_="tracklist")
+        if tracklist_div:
+            # Find all list items in the tracklist
+            ol_tags = tracklist_div.find_all("ol")
+            for ol_tag in ol_tags:
+                li_tags = ol_tag.find_all("li")
+                for li_tag in li_tags:
+                    track_name = li_tag.text.strip()
+                    
+                    # Skip empty tracks or tracks that are just symbols
+                    if not track_name or track_name.strip() in ['?', '-', '–', '—', '•']:
+                        continue
+                        
+                    track_id = clean_item(track_name)
+                    tracklist.append({"track": track_name, "id": track_id})
+            
+            logger.info(f"Found {len(tracklist)} tracks in tracklist div")
+        
+        # If no tracks found in the tracklist div, try alternative methods
+        if not tracklist:
+            # Sometimes tracklists are in table format
+            tables = soup.find_all("table", class_="wikitable")
+            for table in tables:
+                rows = table.find_all("tr")
+                for row in rows:
+                    # Skip header rows
+                    if row.find("th"):
+                        continue
+                    
+                    cols = row.find_all("td")
+                    if cols and len(cols) >= 2:  # Typical format: Track number, Track name
+                        track_name = cols[1].text.strip()
+                        if track_name and not track_name.startswith("?"):
+                            track_id = clean_item(track_name)
+                            tracklist.append({"track": track_name, "id": track_id})
+            
+            # Try pre tags if still no tracks found
+            if not tracklist:
+                pre_tags = soup.find_all("pre")
+                for pre_tag in pre_tags:
+                    text = pre_tag.text.strip()
+                    if text:
+                        lines = text.split('\n')
+                        for line in lines:
+                            line = line.strip()
+                            if line and line.lower() != "tracklist" and not line.startswith("?"):
+                                track_id = clean_item(line)
+                                tracklist.append({"track": line, "id": track_id})
+                
+                # Try parsing from any ol lists that might contain the tracklist
+                if not tracklist:
+                    ol_tags = soup.find_all("ol")
+                    for ol_tag in ol_tags:
+                        # Skip if it's inside the already checked tracklist div
+                        if ol_tag.find_parent("div", class_="tracklist"):
+                            continue
+                            
+                        li_tags = ol_tag.find_all("li")
+                        for li_tag in li_tags:
+                            track_name = li_tag.text.strip()
+                            if track_name and not track_name.startswith("?"):
+                                track_id = clean_item(track_name)
+                                tracklist.append({"track": track_name, "id": track_id})
+        
+        if tracklist:
+            logger.info(f"Found a total of {len(tracklist)} tracks for the mix")
+        else:
+            logger.info("No tracklist found for this mix")
+            
+        return tracklist
+    except Exception as e:
+        logger.error(f"Error fetching mix tracklist: {str(e)}")
+        return []
+
+
+def get_total_track_lists_explorer(artist_name):
+    """Get the total number of tracklists for an artist from Explorer page."""
+    url = build_explorer_url(artist_name, 0, {})
+    
+    try:
+        logger.info(f"Fetching total number of tracks for {artist_name} from Explorer")
         page = fetch_with_retry(url)
         
         soup = BeautifulSoup(page.content, "html.parser")
@@ -136,7 +352,7 @@ def get_total_track_lists(artist_name):
             return 0
             
         total = b_tag.text.strip()
-        logger.info(f"Total track lists for {artist_name}: {total}")
+        logger.info(f"Total track lists for {artist_name} from Explorer: {total}")
         return int(total)
         
     except requests.exceptions.RequestException as e:
@@ -150,40 +366,98 @@ def get_total_track_lists(artist_name):
         return 0
 
 
+def write_to_json(tracklists, filename="tracklists.json"):
+    """Write tracklists to a JSON file."""
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(tracklists, f, ensure_ascii=False, indent=4)
+        logger.info(f"Successfully wrote tracklists to {filename}")
+    except Exception as e:
+        logger.error(f"Error writing to JSON file: {str(e)}")
+
+
 def main(artist_name):
-    """Main function to fetch and process tracklists."""
+    """Main function to fetch and process tracklists using both methods."""
     if not artist_name:
         raise ValueError("Artist name is required")
         
     logger.info(f"Processing artist: {artist_name}")
     
+    all_tracklists = []
+    
     try:
-        # Get total number of track lists
-        total_track_lists = get_total_track_lists(artist_name)
+        # Try both approaches and combine the results
+        category_tracklists = []
+        explorer_tracklists = []
         
-        if total_track_lists == 0:
-            logger.warning(f"No tracklists found for {artist_name}")
-            return []
+        # First, try the category page approach
+        logger.info(f"Attempting to fetch mixes from Category page for {artist_name}")
+        try:
+            soup = fetch_tracklists_category(artist_name)
+            category_tracklists = parse_category_page(soup, artist_name)
+            if category_tracklists:
+                logger.info(f"Successfully retrieved {len(category_tracklists)} mixes from Category page")
+                
+                # Count mixes with tracklists
+                mixes_with_tracklists = sum(1 for mix in category_tracklists if mix.get("has_tracklist", False))
+                logger.info(f"{mixes_with_tracklists} mixes have tracklists from Category page")
+                
+                all_tracklists.extend(category_tracklists)
+        except Exception as e:
+            logger.warning(f"Error fetching from Category page: {str(e)}. Falling back to Explorer page.")
+        
+        # Then try the Explorer page approach to find more mixes with tracklists
+        logger.info(f"Attempting to fetch mixes from Explorer page for {artist_name}")
+        try:
+            # Get total number of track lists from Explorer
+            total_track_lists = get_total_track_lists_explorer(artist_name)
             
-        all_tracklists = []
-        logger.info(f"Fetching {total_track_lists} tracklists in batches of 25")
+            if total_track_lists == 0:
+                logger.warning(f"No tracklists found for {artist_name} in Explorer")
+            else:
+                logger.info(f"Fetching {total_track_lists} tracklists in batches of 25")
+                
+                # Limit to a reasonable number to prevent extremely long processing times
+                max_to_fetch = min(total_track_lists, MAX_FETCH_LIMIT)
+                
+                for offset in range(0, max_to_fetch, 25):
+                    logger.info(f"Fetching batch starting at offset {offset}")
+                    soup = fetch_tracklists_explorer(artist_name, offset, {})
+                    explorer_batch = parse_tracklists_explorer(soup)
+                    explorer_tracklists.extend(explorer_batch)
+                
+                if explorer_tracklists:
+                    logger.info(f"Successfully retrieved {len(explorer_tracklists)} mixes from Explorer page")
+                    
+                    # Count mixes with tracklists
+                    explorer_with_tracklists = sum(1 for mix in explorer_tracklists if mix.get("has_tracklist", False))
+                    logger.info(f"{explorer_with_tracklists} mixes have tracklists from Explorer page")
+                    
+                    # Only add explorer mixes with tracklists if we already have mixes from category page
+                    # to avoid duplicate entries
+                    if category_tracklists:
+                        # Add only explorer mixes with tracklists that have unique titles
+                        existing_titles = set(mix["title"] for mix in all_tracklists)
+                        for mix in explorer_tracklists:
+                            if mix.get("has_tracklist", False) and mix["title"] not in existing_titles:
+                                all_tracklists.append(mix)
+                                existing_titles.add(mix["title"])
+                    else:
+                        # If no category mixes, just add all explorer mixes
+                        all_tracklists.extend(explorer_tracklists)
+        except Exception as e:
+            logger.warning(f"Error fetching from Explorer page: {str(e)}")
         
-        # Limit to a reasonable number to prevent extremely long processing times
-        max_to_fetch = min(total_track_lists, 100)
+        # Calculate total tracks for logging
+        total_tracks = sum(len(mix["tracks"]) for mix in all_tracklists)
+        mixes_with_tracklists = sum(1 for mix in all_tracklists if mix.get("has_tracklist", False))
         
-        for offset in range(0, max_to_fetch, 25):
-            logger.info(f"Fetching batch starting at offset {offset}")
-            soup = fetch_tracklists(artist_name, offset, {})
-            tracklists = parse_tracklists(soup)
-            all_tracklists.extend(tracklists)
-            
-        flat_tracklist = [track for sublist in all_tracklists for track in sublist]
-        logger.info(f"Successfully processed {len(flat_tracklist)} tracks for {artist_name}")
+        logger.info(f"Successfully processed {total_tracks} tracks across {mixes_with_tracklists} mixes with tracklists (total mixes: {len(all_tracklists)})")
         
         # Optionally save to file
-        # write_to_json(flat_tracklist)
+        # write_to_json(all_tracklists)
         
-        return flat_tracklist
+        return all_tracklists
         
     except Exception as e:
         logger.error(f"Error in main function for {artist_name}: {str(e)}")
@@ -194,6 +468,6 @@ if __name__ == "__main__":
     try:
         artist = input("Enter artist name: ")
         tracklist = main(artist)
-        print(f"Found {len(tracklist)} tracks for {artist}")
+        print(f"Found {len(tracklist)} mixes for {artist}")
     except Exception as e:
         print(f"Error: {str(e)}")
