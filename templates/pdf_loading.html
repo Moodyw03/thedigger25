@@ -5,23 +5,30 @@
 {% block head %}
 <meta http-equiv="refresh" content="1;url={{ url_for('download_tracklists_pdf', artist_name=artist_name) }}">
 <style>
+    /* Inline styles to match the brutalist design */
+    @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
+    
+    body {
+        font-family: 'Courier Prime', monospace;
+    }
+    
     .loading-container {
         text-align: center;
-        padding: 40px 20px;
-        max-width: 500px;
-        margin: 30px auto;
-        background-color: #f9f9f9;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        padding: 40px;
+        max-width: 600px;
+        margin: 50px auto;
+        background-color: #ffffff;
+        border: 4px solid #000;
+        position: relative;
     }
     
     .loader {
-        border: 5px solid #f3f3f3;
-        border-radius: 50%;
-        border-top: 5px solid #4285f4;
-        width: 50px;
-        height: 50px;
-        margin: 20px auto;
+        border: 8px solid #f0f0f0;
+        border-radius: 0;
+        border-top: 8px solid #000;
+        width: 80px;
+        height: 80px;
+        margin: 30px auto;
         animation: spin 1s linear infinite;
     }
     
@@ -31,70 +38,92 @@
     }
     
     .loading-text {
-        margin: 20px 0;
-        font-size: 16px;
-        color: #555;
+        margin: 30px 0;
+        font-size: 1.2rem;
+        color: #000;
+        font-weight: bold;
+        text-transform: uppercase;
     }
     
     .loading-hint {
-        font-size: 14px;
-        color: #888;
-        font-style: italic;
+        font-size: 1rem;
+        color: #000;
         margin-top: 30px;
+        border-top: 2px dashed #000;
+        padding-top: 20px;
     }
     
     .loading-title {
-        color: #333;
-        font-size: 24px;
-        margin-bottom: 20px;
+        margin: 0;
+        padding: 15px;
+        font-size: 1.8rem;
+        background-color: #000;
+        color: #fff;
+        margin: -40px -40px 30px -40px;
+        letter-spacing: 1px;
+        font-weight: bold;
+        text-transform: uppercase;
     }
     
     .success-container {
-        display: none;
-        background-color: #eaf7ea;
-        border: 1px solid #a3d9a3;
-        border-radius: 8px;
-        padding: 15px;
-        margin-top: 20px;
-        color: #2c7d2c;
+        background-color: #ffff00;
+        border: 4px solid #000;
+        padding: 30px;
+        margin-top: 30px;
+        color: #000;
+        text-transform: uppercase;
     }
     
     .success-icon {
-        font-size: 36px;
-        margin-bottom: 10px;
+        font-size: 48px;
+        margin-bottom: 20px;
+        font-weight: bold;
     }
     
     .back-button {
         display: inline-block;
-        background-color: #4285f4;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 8px 16px;
-        margin-top: 15px;
+        background-color: #000;
+        color: #fff;
+        border: 3px solid #000;
+        padding: 10px 20px;
+        margin-top: 20px;
         text-decoration: none;
-        font-weight: 500;
-        transition: background-color 0.2s;
+        font-weight: bold;
+        text-transform: uppercase;
+        transition: all 0.2s;
     }
     
     .back-button:hover {
-        background-color: #3367d6;
+        background-color: #fff;
+        color: #000;
+    }
+    
+    .download-link {
+        color: #000;
+        font-weight: bold;
+        text-decoration: none;
+        border-bottom: 2px solid #000;
+        padding-bottom: 2px;
+    }
+    
+    .download-link:hover {
+        background-color: #ffff00;
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="loading-container" id="loadingContainer">
-    <h2 class="loading-title">Generating PDF for {{ artist_name }}</h2>
+    <h2 class="loading-title">GENERATING PDF FOR {{ artist_name|upper }}</h2>
     <div class="loader" id="loader"></div>
-    <p class="loading-text" id="loadingText">Please wait while we collect tracklists and generate your PDF...</p>
-    <p class="loading-hint" id="loadingHint">Your download should start automatically in a moment. If it doesn't, <a href="{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}" id="downloadLink">click here</a>.</p>
+    <p class="loading-text" id="loadingText">PLEASE WAIT WHILE WE COLLECT TRACKLISTS AND GENERATE YOUR PDF...</p>
+    <p class="loading-hint" id="loadingHint">Your download should start automatically in a moment. If it doesn't, <a href="{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}" id="downloadLink" class="download-link">CLICK HERE</a>.</p>
     
     <div class="success-container" id="successContainer">
         <div class="success-icon">✓</div>
-        <h3>Download Complete!</h3>
-        <p>Your PDF file with tracklists for {{ artist_name }} has been successfully downloaded.</p>
-        <a href="{{ url_for('index') }}" class="back-button">Back to Home</a>
+        <h3>DOWNLOAD COMPLETE</h3>
+        <p>YOUR PDF WITH TRACKLISTS FOR {{ artist_name|upper }} HAS BEEN DOWNLOADED</p>
+        <a href="{{ url_for('index') }}" class="back-button">BACK TO HOME</a>
     </div>
 </div>
 
@@ -133,7 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Wait a moment to allow the download dialog to appear
         setTimeout(function() {
             downloadStarted = true;
-            loadingText.textContent = 'Your PDF has been generated and downloaded';
+            loadingText.textContent = 'PDF HAS BEEN GENERATED AND DOWNLOADED';
             showSuccess();
         }, 1500);
     };
@@ -141,7 +170,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // If user manually clicks the download link
     downloadLink.addEventListener('click', function() {
         // Update UI to show download started
-        loadingText.textContent = 'Your PDF is downloading...';
+        loadingText.textContent = 'YOUR PDF IS DOWNLOADING...';
         
         // Mark download as started
         downloadStarted = true;
@@ -166,7 +195,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // still show success after a reasonable time
     setTimeout(function() {
         if (!successContainer.style.display || successContainer.style.display === 'none') {
-            loadingText.textContent = 'Your PDF should have downloaded by now';
+            loadingText.textContent = 'YOUR PDF SHOULD HAVE DOWNLOADED BY NOW';
             showSuccess();
         }
     }, 8000);
