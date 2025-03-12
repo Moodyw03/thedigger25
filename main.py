@@ -60,11 +60,21 @@ def build_explorer_url(artist_name, offset, other_params):
 
 def build_category_url(artist_name):
     """Build the URL for the MixesDB Category page."""
-    # Replace spaces with hyphens and handle special characters
-    formatted_name = artist_name.replace(' ', '-')
-    # URL encode the artist name
-    encoded_name = quote(formatted_name)
-    return f"{CATEGORY_BASE_URL}{encoded_name}"
+    # For specific artists with known URL formats, use the correct format
+    if artist_name.lower() == "ben ufo":
+        return f"{CATEGORY_BASE_URL}Ben_UFO"
+    
+    # Try both underscore and hyphen versions for artists with spaces
+    if " " in artist_name:
+        # Replace spaces with underscores and handle special characters
+        formatted_name = artist_name.replace(' ', '_')
+        # URL encode the artist name
+        encoded_name = quote(formatted_name)
+        return f"{CATEGORY_BASE_URL}{encoded_name}"
+    else:
+        # If no spaces, just encode the name
+        encoded_name = quote(artist_name)
+        return f"{CATEGORY_BASE_URL}{encoded_name}"
 
 
 def fetch_with_retry(url, max_retries=MAX_RETRIES, retry_delay=RETRY_DELAY):
@@ -458,6 +468,24 @@ def fetch_mix_tracklist(mix_url):
         response = fetch_with_retry(mix_url)
         soup = BeautifulSoup(response.content, "html.parser")
         
+        # Special case for Ben UFO mixes
+        if "Ben_UFO" in mix_url or "Ben-UFO" in mix_url:
+            logger.info("Detected Ben UFO mix, using specialized extraction")
+            # Try direct extraction of tracklist table - common in Ben UFO pages
+            table_tracklist = []
+            for table in soup.find_all("table", class_=lambda c: c and "wikitable" in c):
+                for row in table.find_all("tr"):
+                    cells = row.find_all("td")
+                    if len(cells) >= 2:  # Typical [time, track] format
+                        track_name = cells[1].text.strip()
+                        if track_name and len(track_name) > 3:
+                            track_id = clean_item(track_name)
+                            table_tracklist.append({"track": track_name, "id": track_id})
+            
+            if table_tracklist:
+                logger.info(f"Found {len(table_tracklist)} tracks in table format for Ben UFO mix")
+                return table_tracklist
+        
         # Special case for Resident Advisor mixes
         if "Resident_Advisor" in mix_url or "RA." in mix_url:
             logger.info("Detected Resident Advisor format, using specialized extraction")
@@ -506,6 +534,27 @@ def fetch_mix_tracklist(mix_url):
                             logger.info(f"Found {len(tracklist)} tracks after header '{h_tag.text}'")
                             break
             
+            # Direct table extraction for any mix page
+            if not tracklist:
+                for table in soup.find_all("table"):
+                    track_rows = []
+                    # Look for tables with a structure that might contain track listings
+                    if table.find("th") and table.find("th").text.strip().lower() in ["track", "title", "artist", "time"]:
+                        # This might be a track listing table
+                        for row in table.find_all("tr"):
+                            cells = row.find_all("td")
+                            if len(cells) >= 2:  # At least 2 columns (typically track number/time and track name)
+                                # Use the second column as it typically contains the track name
+                                track_name = cells[1].text.strip()
+                                if track_name and not track_name.startswith("?"):
+                                    track_id = clean_item(track_name)
+                                    track_rows.append({"track": track_name, "id": track_id})
+                    
+                    if track_rows:
+                        tracklist.extend(track_rows)
+                        logger.info(f"Found {len(track_rows)} tracks in a table")
+                        break
+            
             # Check for SoundCloud tracklist - often present near iframes or in paragraphs
             if not tracklist and soup.find("iframe", src=lambda x: x and "soundcloud.com" in x):
                 iframe_soundcloud = soup.find("iframe", src=lambda x: x and "soundcloud.com" in x)
@@ -552,7 +601,7 @@ def fetch_mix_tracklist(mix_url):
                         tracklist.extend(tracks_from_text)
                         break  # Found a tracklist, stop searching
 
-            # Sometimes tracklists are in table format
+            # Sometimes tracklists are in table format without clear headers
             if not tracklist:
                 tables = soup.find_all("table", class_="wikitable")
                 for table in tables:
@@ -715,7 +764,22 @@ def main(artist_name):
                 
                 all_tracklists.extend(category_tracklists)
         except Exception as e:
-            logger.warning(f"Error fetching from Category page: {str(e)}. Falling back to Explorer page.")
+            # Try alternate URL format if the first one fails
+            if " " in artist_name and "-" in str(e):
+                logger.warning(f"Error with hyphen format URL. Trying underscore format.")
+                try:
+                    alternate_url = f"{CATEGORY_BASE_URL}{artist_name.replace(' ', '_')}"
+                    logger.info(f"Attempting alternate URL: {alternate_url}")
+                    response = fetch_with_retry(alternate_url)
+                    soup = BeautifulSoup(response.content, "html.parser")
+                    category_tracklists = parse_category_page(soup, artist_name)
+                    if category_tracklists:
+                        logger.info(f"Successfully retrieved {len(category_tracklists)} mixes from alternate Category page")
+                        all_tracklists.extend(category_tracklists)
+                except Exception as alt_e:
+                    logger.warning(f"Error with alternate URL too: {str(alt_e)}. Falling back to Explorer page.")
+            else:
+                logger.warning(f"Error fetching from Category page: {str(e)}. Falling back to Explorer page.")
         
         # Then try the Explorer page approach to find more mixes with tracklists
         logger.info(f"Attempting to fetch mixes from Explorer page for {artist_name}")
@@ -728,8 +792,15 @@ def main(artist_name):
             else:
                 logger.info(f"Fetching {total_track_lists} tracklists in batches of 25")
                 
-                # Limit to a reasonable number to prevent extremely long processing times
-                max_to_fetch = min(total_track_lists, MAX_FETCH_LIMIT)
+                # For large catalogs, limit to a reasonable number for better performance
+                if total_track_lists > 200:
+                    logger.info(f"Large catalog detected ({total_track_lists} mixes). Limiting fetch to prioritize performance.")
+                    # Get first 100 mixes which typically include the most popular ones with tracklists
+                    max_to_fetch = 100
+                    logger.info(f"Fetching first {max_to_fetch} mixes for faster results")
+                else:
+                    # For smaller catalogs, fetch up to the limit
+                    max_to_fetch = min(total_track_lists, MAX_FETCH_LIMIT)
                 
                 for offset in range(0, max_to_fetch, 25):
                     logger.info(f"Fetching batch starting at offset {offset}")

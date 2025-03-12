@@ -11,8 +11,14 @@ import urllib.parse
 import json
 import requests
 from threading import Timer
-from flask import Flask, jsonify, render_template, request, make_response
+from flask import Flask, jsonify, render_template, request, make_response, send_file
 from flask_cors import CORS
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,6 +31,9 @@ HOST = "0.0.0.0"
 # Create Flask app
 app = Flask(__name__)
 CORS(app)
+
+# Add a cache dictionary to the app
+app.config['MIXES_CACHE'] = {}
 
 # Add URL encode filter for Jinja2 templates
 @app.template_filter('urlencode')
@@ -59,7 +68,25 @@ def search():
     
     try:
         logger.info(f"Searching for artist: {artist_name}")
-        mixes = main(artist_name)
+        
+        # Check cache first
+        cache = app.config['MIXES_CACHE']
+        cache_key = artist_name.lower()
+        
+        if cache_key in cache and (datetime.datetime.now() - cache[cache_key]['timestamp']).total_seconds() < 3600:
+            # Use cached data if it's less than an hour old
+            mixes = cache[cache_key]['data']
+            logger.info(f"Using cached data for {artist_name}")
+        else:
+            # Fetch fresh data
+            mixes = main(artist_name)
+            
+            # Update cache
+            cache[cache_key] = {
+                'data': mixes,
+                'timestamp': datetime.datetime.now()
+            }
+            logger.info(f"Updated cache for {artist_name}")
         
         if not mixes:
             return render_template('index.html',
@@ -187,6 +214,160 @@ def fetch_artists():
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return make_response(jsonify({"error": "An unexpected error occurred"}), 500)
+
+@app.route("/download_tracklists_pdf")
+def download_tracklists_pdf():
+    """Generate and download a PDF with all tracklists for an artist."""
+    artist_name = request.args.get("artist_name", "")
+    
+    if not artist_name:
+        return make_response(
+            jsonify({"error": "Artist name is required"}), 400
+        )
+    
+    try:
+        logger.info(f"Generating PDF for artist: {artist_name}")
+        
+        # Fetch the tracklists - use cached data if possible
+        start_time = datetime.datetime.now()
+        
+        # Check cache first
+        cache = app.config['MIXES_CACHE']
+        cache_key = artist_name.lower()
+        
+        if cache_key in cache and (datetime.datetime.now() - cache[cache_key]['timestamp']).total_seconds() < 3600:
+            # Use cached data if it's less than an hour old
+            mixes = cache[cache_key]['data']
+            logger.info(f"Using cached data for PDF generation - {artist_name}")
+        else:
+            # Fetch fresh data
+            mixes = main(artist_name)
+            
+            # Update cache
+            cache[cache_key] = {
+                'data': mixes,
+                'timestamp': datetime.datetime.now()
+            }
+            logger.info(f"Updated cache for PDF generation - {artist_name}")
+        
+        end_time = datetime.datetime.now()
+        process_time = (end_time - start_time).total_seconds()
+        logger.info(f"Retrieved {len(mixes)} mixes in {process_time:.2f} seconds")
+        
+        if not mixes:
+            return make_response(
+                jsonify({"error": f"No tracklists found for '{artist_name}'"}), 404
+            )
+        
+        # Create a PDF file in memory
+        buffer = BytesIO()
+        
+        # Set up the document with letter size paper
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            title=f"Tracklists for {artist_name}",
+            author="The Digger App"
+        )
+        
+        # Styles
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(
+            name='MixTitle',
+            parent=styles['Heading2'],
+            spaceAfter=12
+        ))
+        
+        styles.add(ParagraphStyle(
+            name='TrackItem',
+            parent=styles['Normal'],
+            leftIndent=20,
+            spaceAfter=3
+        ))
+        
+        # Create the content for the PDF
+        content = []
+        
+        # Add the title
+        title = Paragraph(f"Tracklists for {artist_name}", styles['Title'])
+        content.append(title)
+        content.append(Spacer(1, 0.25 * inch))
+        
+        # Add summary stats
+        mixes_with_tracklists = sum(1 for mix in mixes if mix.get("has_tracklist", False))
+        total_tracks = sum(len(mix.get("tracks", [])) for mix in mixes)
+        
+        summary = Paragraph(
+            f"Found {total_tracks} tracks across {mixes_with_tracklists} mixes with tracklists "
+            f"(total of {len(mixes)} mixes)",
+            styles['Normal']
+        )
+        content.append(summary)
+        content.append(Spacer(1, 0.25 * inch))
+        
+        # Generated timestamp
+        generated = Paragraph(
+            f"Generated on {datetime.datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}",
+            styles['Italic']
+        )
+        content.append(generated)
+        content.append(Spacer(1, 0.5 * inch))
+        
+        # Add each mix with its tracklist
+        for mix in mixes:
+            # Mix title and date
+            title_text = mix.get("title", "Untitled Mix")
+            if mix.get("date"):
+                title_text += f" ({mix.get('date')})"
+                
+            mix_title = Paragraph(title_text, styles['MixTitle'])
+            content.append(mix_title)
+            
+            # Add link to MixesDB
+            if mix.get("url"):
+                mix_url = Paragraph(
+                    f"Source: <a href='{mix.get('url')}'>{mix.get('url')}</a>",
+                    styles['Italic']
+                )
+                content.append(mix_url)
+                content.append(Spacer(1, 0.1 * inch))
+            
+            # Add tracklist if available
+            if mix.get("has_tracklist") and mix.get("tracks"):
+                # Add each track
+                for i, track in enumerate(mix.get("tracks", [])):
+                    track_text = f"{i+1}. {track.get('track', '')}"
+                    track_item = Paragraph(track_text, styles['TrackItem'])
+                    content.append(track_item)
+                
+                content.append(Spacer(1, 0.25 * inch))
+            else:
+                no_tracklist = Paragraph("No tracklist available for this mix.", styles['Italic'])
+                content.append(no_tracklist)
+                content.append(Spacer(1, 0.25 * inch))
+            
+            # Add a bigger space between mixes
+            content.append(Spacer(1, 0.3 * inch))
+        
+        # Build the PDF document
+        doc.build(content)
+        
+        # Seek to the beginning of the buffer
+        buffer.seek(0)
+        
+        # Create a response with the PDF
+        response = make_response(buffer.getvalue())
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename=tracklists_{artist_name.replace(" ", "_")}.pdf'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF for {artist_name}: {str(e)}")
+        return make_response(
+            jsonify({"error": f"An error occurred generating the PDF: {str(e)}"}),
+            500
+        )
 
 def open_browser():
     """Open the browser after a short delay."""
