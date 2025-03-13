@@ -69,6 +69,35 @@ export FLASK_DEBUG=1
 python app.py
 ```
 
+## Deployment to Vercel
+
+This application is configured for deployment on Vercel. Follow these steps to deploy:
+
+1. Sign up for a Vercel account at [vercel.com](https://vercel.com) if you don't have one
+2. Install the Vercel CLI:
+   ```bash
+   npm install -g vercel
+   ```
+3. Login to Vercel:
+   ```bash
+   vercel login
+   ```
+4. Deploy the application:
+   ```bash
+   vercel
+   ```
+5. For production deployment:
+   ```bash
+   vercel --prod
+   ```
+
+### Important Notes for Vercel Deployment
+
+- Serverless functions on Vercel have a maximum execution time (10 seconds on free tier)
+- Web scraping operations might time out if they take too long
+- Consider implementing caching mechanisms for frequently accessed data
+- The application is configured to use Vercel's Python runtime
+
 ## Important Note
 
 **The separate `the-digger-ui` repository is no longer needed.** The UI has been fully integrated into this project.

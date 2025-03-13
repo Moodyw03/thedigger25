@@ -159,3 +159,13 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 .vercel
+
+# Vercel
+.vercel
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Temporary files
+tracklists.json
