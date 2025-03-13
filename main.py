@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import re
 import os
 import random
+from datetime import datetime
 
 from clean_item import clean_item
 
@@ -18,8 +19,14 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 20))  # Timeout in seconds
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 3))  # Number of retry attempts
 RETRY_DELAY = int(os.environ.get("RETRY_DELAY", 2))  # Seconds between retries
-# Increase the max fetch limit
+# Default maximum number of pages to fetch 
 MAX_FETCH_LIMIT = int(os.environ.get("MAX_FETCH_LIMIT", 300))
+# Default maximum number of pagination pages to fetch
+MAX_PAGINATION_PAGES = int(os.environ.get("MAX_PAGINATION_PAGES", 10))
+# Rate limiting - requests per minute
+RATE_LIMIT_RPM = int(os.environ.get("RATE_LIMIT_RPM", 30))
+# Minimum delay between requests in seconds
+MIN_REQUEST_DELAY = 60.0 / RATE_LIMIT_RPM  # Convert RPM to seconds
 
 # Set up user agent from environment
 USER_AGENT = os.environ.get("YOUTUBE_USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -28,6 +35,7 @@ HEADERS = {"User-Agent": USER_AGENT}
 # Simple request cache to reduce network calls
 request_cache = {}
 CACHE_EXPIRY = int(os.environ.get('CACHE_EXPIRY', 86400))  # 24 hours in seconds
+last_request_time = 0  # Track the time of the last request for rate limiting
 
 # Base URL for the Explorer endpoint
 EXPLORER_BASE_URL = "https://www.mixesdb.com/w/MixesDB:Explorer/Mixes"
@@ -86,8 +94,60 @@ def build_category_url(artist_name):
         return f"{CATEGORY_BASE_URL}{encoded_name}"
 
 
+def enforce_rate_limit():
+    """Enforce rate limiting by waiting appropriate amount of time between requests."""
+    global last_request_time
+    current_time = time.time()
+    time_since_last_request = current_time - last_request_time
+    
+    if time_since_last_request < MIN_REQUEST_DELAY:
+        wait_time = MIN_REQUEST_DELAY - time_since_last_request
+        logger.debug(f"Rate limiting: Waiting {wait_time:.2f} seconds before next request")
+        time.sleep(wait_time)
+    
+    last_request_time = time.time()
+
+
+def manage_cache():
+    """Clean up expired cache entries to prevent memory bloat."""
+    global request_cache
+    
+    current_time = time.time()
+    expired_keys = [url for url, (cache_time, _) in request_cache.items() 
+                   if current_time - cache_time > CACHE_EXPIRY]
+    
+    for url in expired_keys:
+        del request_cache[url]
+    
+    if expired_keys:
+        logger.info(f"Cache management: Removed {len(expired_keys)} expired entries. Cache now has {len(request_cache)} entries.")
+
+
+def categorize_error(error):
+    """Categorize error as transient or permanent to inform retry strategy."""
+    if isinstance(error, requests.exceptions.Timeout):
+        return "timeout", True  # Transient
+    elif isinstance(error, requests.exceptions.ConnectionError):
+        return "connection", True  # Transient
+    elif isinstance(error, requests.exceptions.HTTPError):
+        # 5xx errors are server errors, likely transient
+        if hasattr(error, 'response') and error.response.status_code >= 500:
+            return f"server_error_{error.response.status_code}", True
+        # 4xx errors are client errors, likely permanent
+        elif hasattr(error, 'response') and error.response.status_code >= 400:
+            return f"client_error_{error.response.status_code}", False
+        else:
+            return "http_error", True  # Assume most HTTP errors are transient
+    else:
+        return "unknown", True  # Default to treating unknown errors as transient
+
+
 def fetch_with_retry(url, max_retries=MAX_RETRIES, retry_delay=RETRY_DELAY):
     """Fetch URL with retry logic and caching."""
+    # Manage cache periodically
+    if random.random() < 0.05:  # 5% chance to run cache management
+        manage_cache()
+    
     # Check if the URL is in the cache and not expired
     if url in request_cache:
         cache_time, cached_response = request_cache[url]
@@ -95,25 +155,44 @@ def fetch_with_retry(url, max_retries=MAX_RETRIES, retry_delay=RETRY_DELAY):
             logger.info(f"Using cached response for: {url}")
             return cached_response
     
+    # Enforce rate limiting before making the request
+    enforce_rate_limit()
+    
+    transient_errors = 0
+    permanent_errors = 0
+    
     for attempt in range(max_retries):
         try:
             logger.info(f"Request attempt {attempt + 1} for: {url}")
             response = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
             
-            # Store in cache
+            # Store successful response in cache
             request_cache[url] = (time.time(), response)
             
             return response
         except requests.exceptions.RequestException as e:
-            logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
-            if attempt < max_retries - 1:
-                # Exponential backoff with jitter
-                sleep_time = retry_delay * (2 ** attempt) + random.uniform(0, 1)
-                logger.info(f"Retrying in {sleep_time:.2f} seconds...")
-                time.sleep(sleep_time)
+            error_type, is_transient = categorize_error(e)
+            
+            if is_transient:
+                transient_errors += 1
+                logger.warning(f"Transient error ({error_type}) in attempt {attempt + 1}: {str(e)}")
+                
+                if attempt < max_retries - 1:
+                    # Progressive backoff with jitter for transient errors
+                    backoff_factor = min(2 ** attempt, 60)  # Cap to 60 seconds
+                    jitter = random.uniform(0, 1)
+                    sleep_time = retry_delay * backoff_factor + jitter
+                    
+                    logger.info(f"Retrying in {sleep_time:.2f} seconds...")
+                    time.sleep(sleep_time)
+                else:
+                    logger.error(f"All {max_retries} attempts failed for URL: {url} (transient errors: {transient_errors})")
+                    raise
             else:
-                logger.error(f"All {max_retries} attempts failed for URL: {url}")
+                permanent_errors += 1
+                logger.error(f"Permanent error ({error_type}) encountered: {str(e)}")
+                # No point retrying permanent errors
                 raise
 
 
@@ -143,8 +222,8 @@ def fetch_tracklists_category(artist_name):
         raise ValueError(f"Failed to fetch data from MixesDB Category: {str(e)}")
 
 
-def fetch_all_category_pages(artist_name):
-    """Fetch all pages for a category, handling pagination."""
+def fetch_all_category_pages(artist_name, max_pages=MAX_PAGINATION_PAGES):
+    """Fetch all pages for a category, handling pagination, with a configurable limit."""
     url = build_category_url(artist_name)
     logger.info(f"Fetching first category page: {url}")
     
@@ -180,8 +259,11 @@ def fetch_all_category_pages(artist_name):
         pagination_found = True
         current_soup = soup
         
-        while pagination_found:
+        while pagination_found and page_count < max_pages:
             pagination_found = False
+            
+            # Progress indicator
+            logger.info(f"Pagination progress: {page_count}/{max_pages} pages fetched")
             
             # 1. Check for standard MediaWiki pagination navigation
             nav_div = current_soup.find('div', class_='mw-allpages-nav')
@@ -228,8 +310,14 @@ def fetch_all_category_pages(artist_name):
                         logger.info(f"Fetched category page {page_count}")
                         pagination_found = True
                     except Exception as e:
-                        logger.error(f"Error fetching next page {next_url}: {str(e)}")
-                        break
+                        error_type, is_transient = categorize_error(e) if hasattr(e, 'response') else ("unknown", True)
+                        logger.error(f"Error fetching next page {next_url}: {str(e)} (Error type: {error_type}, Transient: {is_transient})")
+                        if not is_transient:
+                            # If it's a permanent error, stop trying
+                            break
+                        else:
+                            # For transient errors, we can try alternative methods
+                            pass
             
             # If we don't have navigation div but there might be more paginations:
             # Try to extract "next 200" links from any location in the document
@@ -261,14 +349,20 @@ def fetch_all_category_pages(artist_name):
                             pagination_found = True
                             break
                         except Exception as e:
-                            logger.error(f"Error fetching next page {next_url}: {str(e)}")
+                            error_type, is_transient = categorize_error(e) if hasattr(e, 'response') else ("unknown", True)
+                            logger.error(f"Error fetching next page {next_url}: {str(e)} (Error type: {error_type}, Transient: {is_transient})")
         
-        logger.info(f"Fetched {page_count} category pages in total")
+        if page_count >= max_pages:
+            logger.info(f"Reached configured maximum of {max_pages} pages, stopping pagination fetch")
+        else:
+            logger.info(f"Fetched all available category pages ({page_count} total)")
+        
         return all_pages
         
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching category pages: {str(e)}")
-        raise ValueError(f"Failed to fetch all category pages: {str(e)}")
+        error_type, is_transient = categorize_error(e) if hasattr(e, 'response') else ("unknown", True)
+        logger.error(f"Error fetching category pages: {str(e)} (Error type: {error_type}, Transient: {is_transient})")
+        raise
 
 
 def parse_tracklists_explorer(soup):
@@ -841,38 +935,44 @@ def fetch_mix_tracklist(mix_url):
 
 
 def get_total_track_lists_explorer(artist_name):
-    """Get the total number of tracklists for an artist from Explorer page."""
+    """Get the total number of track lists available for an artist in the Explorer view."""
     url = build_explorer_url(artist_name, 0, {})
     
     try:
-        logger.info(f"Fetching total number of tracks for {artist_name} from Explorer")
-        page = fetch_with_retry(url)
+        response = fetch_with_retry(url)
+        soup = BeautifulSoup(response.content, "html.parser")
         
-        soup = BeautifulSoup(page.content, "html.parser")
+        # Look for the count in the heading
+        heading = soup.find('div', class_='rc_headin')
+        if heading:
+            text = heading.get_text()
+            match = re.search(r'\bof\s+(\d+)\b', text)
+            if match:
+                count = int(match.group(1))
+                logger.info(f"Total track lists for {artist_name} from Explorer: {count}")
+                return count
         
-        # Get total number of track lists
-        explorer_res_class = soup.find("span", class_="explorerRes")
-        if not explorer_res_class:
-            logger.warning("Could not find explorerRes class in the response")
-            return 0
+        # Fallback: Count the actual rows and assume there's only one page
+        rows = soup.find_all('tr', class_='spaceRow')
+        if rows:
+            # Add logic to look for pagination and multiple pages
+            pagination = soup.find('div', class_='listPagination')
+            if pagination:
+                # First look for "x of y" text
+                text = pagination.get_text()
+                match = re.search(r'\bof\s+(\d+)\b', text)
+                if match:
+                    count = int(match.group(1))
+                    logger.info(f"Found total track lists from pagination: {count}")
+                    return count
             
-        b_tag = explorer_res_class.find("b")
-        if not b_tag:
-            logger.warning("Could not find b tag in explorerRes class")
-            return 0
-            
-        total = b_tag.text.strip()
-        logger.info(f"Total track lists for {artist_name} from Explorer: {total}")
-        return int(total)
+            # If we couldn't find a count, just return the number of rows
+            logger.info(f"Counted {len(rows)} track lists in the current page")
+            return len(rows)
         
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error getting total tracklists: {str(e)}")
-        raise ValueError(f"Failed to get total track lists: {str(e)}")
-    except ValueError as e:
-        logger.error(f"Value error parsing total: {str(e)}")
         return 0
     except Exception as e:
-        logger.error(f"Unexpected error getting total tracklists: {str(e)}")
+        logger.error(f"Error determining total track lists: {str(e)}")
         return 0
 
 
@@ -886,12 +986,18 @@ def write_to_json(tracklists, filename="tracklists.json"):
         logger.error(f"Error writing to JSON file: {str(e)}")
 
 
-def main(artist_name):
-    """Main function to fetch and process tracklists using both methods."""
+def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mixes=MAX_FETCH_LIMIT):
+    """Main function to fetch and process tracklists using both methods with configurable limits."""
     if not artist_name:
         raise ValueError("Artist name is required")
         
     logger.info(f"Processing artist: {artist_name}")
+    logger.info(f"Configured limits: Max pagination pages={max_pagination_pages}, Max explorer mixes={max_explorer_mixes}")
+    
+    # Progress tracking variables
+    start_time = time.time()
+    processing_step = 1
+    total_steps = 4  # Category pages, Explorer pages, Processing, Combining
     
     all_tracklists = []
     
@@ -901,14 +1007,15 @@ def main(artist_name):
         explorer_tracklists = []
         
         # First, try the category page approach with pagination support
-        logger.info(f"Attempting to fetch mixes from Category pages for {artist_name}")
+        logger.info(f"[Step {processing_step}/{total_steps}] Attempting to fetch mixes from Category pages for {artist_name}")
         try:
             # Fetch all pages for this category
-            category_pages = fetch_all_category_pages(artist_name)
+            category_pages = fetch_all_category_pages(artist_name, max_pagination_pages)
             
             # Parse each page
             for i, soup in enumerate(category_pages):
-                logger.info(f"Parsing category page {i+1} of {len(category_pages)}")
+                progress = ((i + 1) / len(category_pages)) * 100
+                logger.info(f"Parsing category page {i+1} of {len(category_pages)} - {progress:.1f}% complete")
                 page_tracklists = parse_category_page(soup, artist_name)
                 category_tracklists.extend(page_tracklists)
                 
@@ -938,8 +1045,10 @@ def main(artist_name):
             else:
                 logger.warning(f"Error fetching from Category page: {str(e)}. Falling back to Explorer page.")
         
+        processing_step += 1
+        
         # Then try the Explorer page approach to find more mixes with tracklists
-        logger.info(f"Attempting to fetch mixes from Explorer page for {artist_name}")
+        logger.info(f"[Step {processing_step}/{total_steps}] Attempting to fetch mixes from Explorer page for {artist_name}")
         try:
             # Get total number of track lists from Explorer
             total_track_lists = get_total_track_lists_explorer(artist_name)
@@ -952,18 +1061,23 @@ def main(artist_name):
                 # For large catalogs, limit to a reasonable number for better performance
                 if total_track_lists > 200:
                     logger.info(f"Large catalog detected ({total_track_lists} mixes). Limiting fetch to prioritize performance.")
-                    # Get first 100 mixes which typically include the most popular ones with tracklists
-                    max_to_fetch = 100
+                    # Get first X mixes which typically include the most popular ones with tracklists
+                    # Respect the user-configured limit
+                    max_to_fetch = min(max_explorer_mixes, 200)
                     logger.info(f"Fetching first {max_to_fetch} mixes for faster results")
                 else:
                     # For smaller catalogs, fetch up to the limit
-                    max_to_fetch = min(total_track_lists, MAX_FETCH_LIMIT)
+                    max_to_fetch = min(total_track_lists, max_explorer_mixes)
                 
                 for offset in range(0, max_to_fetch, 25):
-                    logger.info(f"Fetching batch starting at offset {offset}")
+                    progress = (offset / max_to_fetch) * 100
+                    logger.info(f"Fetching batch starting at offset {offset} - {progress:.1f}% complete")
                     soup = fetch_tracklists_explorer(artist_name, offset, {})
                     explorer_batch = parse_tracklists_explorer(soup)
                     explorer_tracklists.extend(explorer_batch)
+                    
+                    # Report running total of found mixes
+                    logger.info(f"Running total: {len(explorer_tracklists)} mixes found so far")
                 
                 if explorer_tracklists:
                     logger.info(f"Successfully retrieved {len(explorer_tracklists)} mixes from Explorer page")
@@ -972,25 +1086,40 @@ def main(artist_name):
                     explorer_with_tracklists = sum(1 for mix in explorer_tracklists if mix.get("has_tracklist", False))
                     logger.info(f"{explorer_with_tracklists} mixes have tracklists from Explorer page")
                     
+                    processing_step += 1
+                    logger.info(f"[Step {processing_step}/{total_steps}] Combining results from Category and Explorer pages")
+                    
                     # Only add explorer mixes with tracklists if we already have mixes from category page
                     # to avoid duplicate entries
                     if category_tracklists:
                         # Add only explorer mixes with tracklists that have unique titles
                         existing_titles = set(mix["title"] for mix in all_tracklists)
+                        unique_added = 0
                         for mix in explorer_tracklists:
                             if mix.get("has_tracklist", False) and mix["title"] not in existing_titles:
                                 all_tracklists.append(mix)
                                 existing_titles.add(mix["title"])
+                                unique_added += 1
+                        
+                        logger.info(f"Added {unique_added} unique mixes from Explorer that weren't in Category results")
                     else:
                         # If no category mixes, just add all explorer mixes
                         all_tracklists.extend(explorer_tracklists)
+                        logger.info(f"No Category results found, using all {len(explorer_tracklists)} mixes from Explorer")
         except Exception as e:
             logger.warning(f"Error fetching from Explorer page: {str(e)}")
         
+        processing_step += 1
+        logger.info(f"[Step {processing_step}/{total_steps}] Final processing")
+        
         # Calculate total tracks for logging
-        total_tracks = sum(len(mix["tracks"]) for mix in all_tracklists)
+        total_tracks = sum(len(mix.get("tracks", [])) for mix in all_tracklists if mix.get("has_tracklist", False))
         mixes_with_tracklists = sum(1 for mix in all_tracklists if mix.get("has_tracklist", False))
         
+        # Calculate execution time
+        execution_time = time.time() - start_time
+        
+        logger.info(f"Processing complete in {execution_time:.2f} seconds")
         logger.info(f"Successfully processed {total_tracks} tracks across {mixes_with_tracklists} mixes with tracklists (total mixes: {len(all_tracklists)})")
         
         # Optionally save to file
@@ -1006,7 +1135,31 @@ def main(artist_name):
 if __name__ == "__main__":
     try:
         artist = input("Enter artist name: ")
-        tracklist = main(artist)
-        print(f"Found {len(tracklist)} mixes for {artist}")
+        
+        # Get optional configuration parameters
+        try:
+            max_pages = int(input("Enter maximum pagination pages (default: 10, 0 for unlimited): ") or "10")
+            if max_pages <= 0:
+                max_pages = float('inf')  # Unlimited
+        except ValueError:
+            max_pages = MAX_PAGINATION_PAGES
+            
+        try:
+            max_mixes = int(input("Enter maximum explorer mixes to fetch (default: 300, 0 for unlimited): ") or "300")
+            if max_mixes <= 0:
+                max_mixes = float('inf')  # Unlimited
+        except ValueError:
+            max_mixes = MAX_FETCH_LIMIT
+            
+        print(f"Starting search for '{artist}' with max_pages={max_pages}, max_mixes={max_mixes}")
+        start_time = time.time()
+        
+        tracklist = main(artist, max_pages, max_mixes)
+        
+        end_time = time.time()
+        execution_time = end_time - start_time
+        
+        print(f"Found {len(tracklist)} mixes for {artist} in {execution_time:.2f} seconds")
+        print(f"Mixes with tracklists: {sum(1 for mix in tracklist if mix.get('has_tracklist', False))}")
     except Exception as e:
         print(f"Error: {str(e)}")

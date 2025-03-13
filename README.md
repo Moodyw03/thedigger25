@@ -1,5 +1,7 @@
 # The Digger
 
+./run-app.sh
+
 A tool for finding and listening to tracks played by your favorite DJs on MixesDB.
 
 ## Features
