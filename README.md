@@ -18,6 +18,12 @@ This application is now a single integrated package - both the backend and front
 
 1. Make sure you have Python 3.x installed
 2. Clone this repository
+
+```bash
+git clone https://github.com/Moodyw03/thedigger25.git
+cd thedigger25
+```
+
 3. Set up a virtual environment (optional but recommended)
 
 ```bash
@@ -34,13 +40,34 @@ pip install -r requirements.txt
 5. Run the application
 
 ```bash
+# Option 1: Using the shell script
 ./run-app.sh
+
+# Option 2: Direct Python command
+python app.py
+
+# Option 3: If you've set up the alias using reset-terminal.sh
+digger
 ```
 
 The app will automatically:
 
 - Start the server
 - Open your browser to http://localhost:8080
+
+### Development Commands
+
+```bash
+# Run tests (if implemented)
+pytest
+
+# Check code style
+flake8
+
+# Run with debug mode enabled
+export FLASK_DEBUG=1
+python app.py
+```
 
 ## Important Note
 
