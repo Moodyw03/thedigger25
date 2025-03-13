@@ -11,6 +11,10 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from main import main
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -283,4 +287,15 @@ def generate_pdf(artist_name, mixes):
     return buffer.getvalue()
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0")
+    # Get environment variables
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    host = os.environ.get("FLASK_HOST", "0.0.0.0")
+    port = int(os.environ.get("FLASK_PORT", 8080))
+    
+    # Check environment and show warning if debug mode is enabled
+    if debug_mode:
+        logger.warning("Debug mode is enabled. This should NOT be used in production!")
+    else:
+        logger.info("Starting application in production mode")
+    
+    app.run(debug=debug_mode, host=host, port=port)

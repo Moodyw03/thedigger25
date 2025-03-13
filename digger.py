@@ -20,6 +20,10 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 import time
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -424,9 +428,25 @@ def main_runner():
     app.run(debug=True, host=HOST, port=PORT)
 
 if __name__ == "__main__":
-    print(f"Starting The Digger application...")
-    print(f"Opening your browser to http://localhost:{PORT}")
-    print(f"Press Ctrl+C to stop the server")
+    # Configure from environment variables
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    port = int(os.environ.get("FLASK_PORT", PORT))
+    host = os.environ.get("FLASK_HOST", HOST)
     
-    # Run the app
-    main_runner() 
+    # Check environment and show warning if debug mode is enabled
+    if debug_mode:
+        logger.warning("Debug mode is enabled. This should NOT be used in production!")
+    else:
+        logger.info("Starting application in production mode")
+    
+    # Try to open browser
+    if "BROWSER" not in os.environ or os.environ.get("BROWSER", "1") == "1":
+        url = f"http://localhost:{port}"
+        print(f"Opening your browser to {url}")
+        # Open browser after a short delay to ensure the server is running
+        Timer(1, lambda: webbrowser.open(url)).start()
+    else:
+        print("Browser auto-open is disabled")
+        
+    print("Press Ctrl+C to stop the server")
+    app.run(debug=debug_mode, host=host, port=port) 
