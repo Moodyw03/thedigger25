@@ -71,7 +71,7 @@ python app.py
 
 ## Deployment to Vercel
 
-This application is configured for deployment on Vercel. Follow these steps to deploy:
+This application is optimized for deployment on Vercel. Follow these steps to deploy:
 
 1. Sign up for a Vercel account at [vercel.com](https://vercel.com) if you don't have one
 2. Install the Vercel CLI:
@@ -91,12 +91,26 @@ This application is configured for deployment on Vercel. Follow these steps to d
    vercel --prod
    ```
 
+### Vercel Optimizations
+
+This application includes several optimizations for running on Vercel's serverless platform:
+
+1. **In-memory caching** for YouTube video searches and web requests to reduce API calls
+2. **Exponential backoff with jitter** for retry attempts to improve reliability
+3. **Environment variables** for configuration:
+   - `FLASK_ENV`: Set to "production" for production deployment
+   - `MAX_FETCH_LIMIT`: Maximum number of items to fetch (default: 300)
+   - `REQUEST_TIMEOUT`: Timeout for HTTP requests in seconds (default: 20)
+   - `MAX_RETRIES`: Number of retry attempts for HTTP requests (default: 3)
+   - `CACHE_EXPIRY`: Cache expiry time in seconds (default: 86400 - 24 hours)
+   - `YOUTUBE_USER_AGENT`: Custom user agent for YouTube requests
+
 ### Important Notes for Vercel Deployment
 
 - Serverless functions on Vercel have a maximum execution time (10 seconds on free tier)
 - Web scraping operations might time out if they take too long
-- Consider implementing caching mechanisms for frequently accessed data
-- The application is configured to use Vercel's Python runtime
+- Consider upgrading to Vercel Pro if you need longer function execution times
+- The application uses caching to reduce API calls and improve performance
 
 ## Important Note
 

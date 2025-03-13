@@ -11,7 +11,7 @@ import urllib.parse
 import json
 import requests
 from threading import Timer
-from flask import Flask, jsonify, render_template, request, make_response, send_file
+from flask import Flask, jsonify, render_template, request, make_response, send_file, redirect, url_for
 from flask_cors import CORS
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -19,6 +19,7 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -34,6 +35,12 @@ CORS(app)
 
 # Add a cache dictionary to the app
 app.config['MIXES_CACHE'] = {}
+
+# Simple in-memory cache for YouTube video searches
+# This will help reduce API calls and improve performance on Vercel
+video_id_cache = {}
+# Set a cache expiry time (24 hours in seconds)
+CACHE_EXPIRY = int(os.environ.get('CACHE_EXPIRY', 86400))
 
 # Add URL encode filter for Jinja2 templates
 @app.template_filter('urlencode')
@@ -115,6 +122,11 @@ def search_video():
         return jsonify({"error": "Query parameter is required"}), 400
     
     try:
+        # Check if we have this query cached already
+        if query in video_id_cache:
+            logger.info(f"Using cached video ID for query: {query}")
+            return jsonify({"videoId": video_id_cache[query]})
+        
         # We'll use a simple approach to extract video ID from YouTube search results
         # This doesn't require an API key but is a bit of a hack
         search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
@@ -177,6 +189,9 @@ def search_video():
             if len(video_id) > 11:
                 video_id = video_id[:11]
                 logger.info(f"Truncated to 11 characters: {video_id}")
+        
+        # Cache the result
+        video_id_cache[query] = video_id
         
         return jsonify({"videoId": video_id})
         

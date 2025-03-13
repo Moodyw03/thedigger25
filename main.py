@@ -5,6 +5,8 @@ import time
 from urllib.parse import urlencode, quote
 from bs4 import BeautifulSoup
 import re
+import os
+import random
 
 from clean_item import clean_item
 
@@ -12,18 +14,25 @@ from clean_item import clean_item
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+# Request configuration
+REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 20))  # Timeout in seconds
+MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 3))  # Number of retry attempts
+RETRY_DELAY = int(os.environ.get("RETRY_DELAY", 2))  # Seconds between retries
+# Increase the max fetch limit
+MAX_FETCH_LIMIT = int(os.environ.get("MAX_FETCH_LIMIT", 300))
+
+# Set up user agent from environment
+USER_AGENT = os.environ.get("YOUTUBE_USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+HEADERS = {"User-Agent": USER_AGENT}
+
+# Simple request cache to reduce network calls
+request_cache = {}
+CACHE_EXPIRY = int(os.environ.get('CACHE_EXPIRY', 86400))  # 24 hours in seconds
+
 # Base URL for the Explorer endpoint
 EXPLORER_BASE_URL = "https://www.mixesdb.com/w/MixesDB:Explorer/Mixes"
 # Base URL for the Category pages
 CATEGORY_BASE_URL = "https://www.mixesdb.com/w/Category:"
-
-# Request configuration
-REQUEST_TIMEOUT = 20  # Increased from 10 to 20 seconds
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds between retries
-# Increase the max fetch limit
-MAX_FETCH_LIMIT = 300  # Increased from 100 to 300
 
 
 def build_explorer_url(artist_name, offset, other_params):
@@ -78,18 +87,31 @@ def build_category_url(artist_name):
 
 
 def fetch_with_retry(url, max_retries=MAX_RETRIES, retry_delay=RETRY_DELAY):
-    """Fetch URL with retry logic."""
+    """Fetch URL with retry logic and caching."""
+    # Check if the URL is in the cache and not expired
+    if url in request_cache:
+        cache_time, cached_response = request_cache[url]
+        if time.time() - cache_time < CACHE_EXPIRY:
+            logger.info(f"Using cached response for: {url}")
+            return cached_response
+    
     for attempt in range(max_retries):
         try:
             logger.info(f"Request attempt {attempt + 1} for: {url}")
             response = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
+            
+            # Store in cache
+            request_cache[url] = (time.time(), response)
+            
             return response
         except requests.exceptions.RequestException as e:
             logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
             if attempt < max_retries - 1:
-                logger.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
+                # Exponential backoff with jitter
+                sleep_time = retry_delay * (2 ** attempt) + random.uniform(0, 1)
+                logger.info(f"Retrying in {sleep_time:.2f} seconds...")
+                time.sleep(sleep_time)
             else:
                 logger.error(f"All {max_retries} attempts failed for URL: {url}")
                 raise
