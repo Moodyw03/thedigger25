@@ -159,7 +159,6 @@ def fetch_all_category_pages(artist_name):
         visited_urls.add(url)
         
         # Check for pagination links - MixesDB uses specific navigation at the bottom
-        # Look for the 'next page' or 'next xxx' link which appears in pagination
         page_count = 1
         
         # Special case for Ben UFO - directly handle the pagefrom URL we know exists
@@ -175,65 +174,94 @@ def fetch_all_category_pages(artist_name):
                 page_count += 1
                 logger.info(f"Fetched Ben UFO category page {page_count}")
         
-        # First look for the standard MediaWiki pagination navigation
-        nav_div = soup.find('div', class_='mw-allpages-nav')
-        if not nav_div:
-            # Also try the category navigation which has pagination links
-            nav_div = soup.find('div', id='mw-pages')
+        # Look for pagination in different possible locations
         
-        # If we found a navigation div, look for pagination links
-        if nav_div:
-            # Look for "next page" or "next xxx" links
-            pagination = nav_div.find('a', text=re.compile('next', re.IGNORECASE))
+        # Try to find pagination links in various formats
+        pagination_found = True
+        current_soup = soup
+        
+        while pagination_found:
+            pagination_found = False
             
-            # Also look for pagefrom links which indicate pagination
-            if not pagination:
-                pagination_links = nav_div.find_all('a')
-                for link in pagination_links:
-                    href = link.get('href', '')
-                    if 'pagefrom=' in href or 'pageuntil=' in href:
-                        if 'pagefrom=' in href and 'pagefrom=' not in visited_urls:
+            # 1. Check for standard MediaWiki pagination navigation
+            nav_div = current_soup.find('div', class_='mw-allpages-nav')
+            
+            # 2. Check for category specific pagination 
+            if not nav_div:
+                nav_div = current_soup.find('div', id='mw-pages')
+            
+            # 3. Look for direct listPagination divs
+            if not nav_div:
+                nav_div = current_soup.find('div', class_='listPagination')
+            
+            # 4. Check for any text with "next" in it
+            if nav_div:
+                # First look for "next" links
+                pagination = nav_div.find('a', text=re.compile('next', re.IGNORECASE))
+                
+                # If no "next" link found, look for "pagefrom" in URLs
+                if not pagination:
+                    for link in nav_div.find_all('a'):
+                        href = link.get('href', '')
+                        if ('pagefrom=' in href or 'pageuntil=' in href) and href not in visited_urls:
                             pagination = link
                             break
+                
+                # If we found a pagination link, follow it
+                if pagination:
+                    next_url = pagination.get('href')
+                    if not next_url.startswith('http'):
+                        next_url = f"https://www.mixesdb.com{next_url}"
+                    
+                    # Skip if we've already visited this URL
+                    if next_url in visited_urls:
+                        break
+                    
+                    logger.info(f"Fetching next category page: {next_url}")
+                    try:
+                        response = fetch_with_retry(next_url)
+                        current_soup = BeautifulSoup(response.content, "html.parser")
+                        all_pages.append(current_soup)
+                        visited_urls.add(next_url)
+                        
+                        page_count += 1
+                        logger.info(f"Fetched category page {page_count}")
+                        pagination_found = True
+                    except Exception as e:
+                        logger.error(f"Error fetching next page {next_url}: {str(e)}")
+                        break
             
-            # Continue fetching pages while there are pagination links
-            while pagination:
-                next_url = pagination.get('href')
-                if not next_url.startswith('http'):
-                    next_url = f"https://www.mixesdb.com{next_url}"
-                
-                # Skip if we've already visited this URL
-                if next_url in visited_urls:
-                    break
+            # If we don't have navigation div but there might be more paginations:
+            # Try to extract "next 200" links from any location in the document
+            if not pagination_found:
+                for link in current_soup.find_all('a'):
+                    link_text = link.get_text().strip().lower()
+                    href = link.get('href', '')
                     
-                logger.info(f"Fetching next category page: {next_url}")
-                response = fetch_with_retry(next_url)
-                soup = BeautifulSoup(response.content, "html.parser")
-                all_pages.append(soup)
-                visited_urls.add(next_url)
-                
-                page_count += 1
-                logger.info(f"Fetched category page {page_count}")
-                
-                # Check for more pagination links
-                nav_div = soup.find('div', class_='mw-allpages-nav')
-                if not nav_div:
-                    nav_div = soup.find('div', id='mw-pages')
-                    
-                if nav_div:
-                    pagination = nav_div.find('a', text=re.compile('next', re.IGNORECASE))
-                    if not pagination:
-                        pagination_links = nav_div.find_all('a')
-                        for link in pagination_links:
-                            href = link.get('href', '')
-                            if 'pagefrom=' in href or 'pageuntil=' in href:
-                                if next_url not in visited_urls:
-                                    pagination = link
-                                    break
-                        else:
-                            pagination = None
-                else:
-                    pagination = None
+                    # Check for next page indicators
+                    if (('next' in link_text and ('200' in link_text or '100' in link_text)) or
+                        'pagefrom=' in href or 'pageuntil=' in href) and href not in visited_urls:
+                        
+                        next_url = link.get('href')
+                        if not next_url.startswith('http'):
+                            next_url = f"https://www.mixesdb.com{next_url}"
+                        
+                        if next_url in visited_urls:
+                            continue
+                        
+                        logger.info(f"Fetching next category page (secondary method): {next_url}")
+                        try:
+                            response = fetch_with_retry(next_url) 
+                            current_soup = BeautifulSoup(response.content, "html.parser")
+                            all_pages.append(current_soup)
+                            visited_urls.add(next_url)
+                            
+                            page_count += 1
+                            logger.info(f"Fetched category page {page_count}")
+                            pagination_found = True
+                            break
+                        except Exception as e:
+                            logger.error(f"Error fetching next page {next_url}: {str(e)}")
         
         logger.info(f"Fetched {page_count} category pages in total")
         return all_pages
