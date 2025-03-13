@@ -436,36 +436,38 @@ footer {
     color: #fff;
 }
 
+/* Revised minimalist tracklist container */
 .tracklist-container {
-    border: 3px solid #000;
-    padding: 20px;
+    border-left: 3px solid #000;
+    padding: 10px 0 0 20px;
     position: relative;
-    background-color: #f7f7f7;
+    background-color: transparent;
 }
 
 .tracklist-header {
-    margin: -20px -20px 20px -20px;
-    padding: 10px 20px;
+    margin: 0 0 20px 0;
+    padding: 0;
     font-size: 1.2rem;
     text-transform: uppercase;
-    background-color: #000;
-    color: #fff;
+    color: #000;
     font-weight: bold;
+    border-bottom: 3px solid #000;
+    display: inline-block;
 }
 
 .no-tracks-message {
     color: #000;
-    font-style: normal;
+    font-style: italic;
     margin: 20px 0;
-    padding: 20px;
-    background-color: #f0f0f0;
-    border: 3px dashed #000;
+    padding: 10px 0;
+    background-color: transparent;
+    border: none;
+    border-left: 3px solid #000;
+    padding-left: 10px;
     text-transform: uppercase;
-    text-align: center;
-    font-weight: bold;
 }
 
-/* Track list */
+/* Simplified track list */
 .track-list {
     margin: 0;
     padding: 0 0 0 20px;
@@ -473,8 +475,8 @@ footer {
 
 .track-item {
     margin-bottom: 15px;
-    padding-bottom: 15px;
-    border-bottom: 2px solid #ddd;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ddd;
     position: relative;
 }
 
@@ -494,38 +496,38 @@ footer {
     font-size: 1rem;
 }
 
+/* Simplified play button */
 .play-button {
     display: inline-flex;
     align-items: center;
-    background-color: #000;
-    color: white;
+    background-color: transparent;
+    color: #000;
     text-decoration: none;
-    padding: 5px 10px;
+    padding: 4px 8px;
     border: 2px solid #000;
     font-size: 0.8rem;
-    transition: all 0.2s;
+    transition: background-color 0.2s;
     white-space: nowrap;
     cursor: pointer;
     font-weight: bold;
-    text-transform: uppercase;
 }
 
 .play-button:hover {
-    background-color: #fff;
-    color: #000;
+    background-color: #000;
+    color: #fff;
 }
 
 .play-icon {
-    margin-right: 5px;
+    margin-right: 4px;
 }
 
-/* Inline player styles */
+/* Simplified inline player */
 .inline-player-container {
-    margin-top: 15px;
+    margin-top: 10px;
     margin-left: 20px;
-    padding: 10px;
-    border: 2px solid #000;
-    background-color: #f0f0f0;
+    padding: 5px 0;
+    border-left: 2px solid #000;
+    padding-left: 10px;
 }
 
 .player-controls {
@@ -536,37 +538,72 @@ footer {
 .audio-controls {
     display: flex;
     align-items: center;
-    gap: 15px;
-    background-color: #000;
-    padding: 10px 15px;
-    border: 2px solid #000;
+    gap: 10px;
+    background-color: transparent;
+    padding: 5px 0;
 }
 
 .control-btn {
     cursor: pointer;
     font-size: 18px;
-    color: #fff;
+    color: #000;
     display: inline-flex;
     justify-content: center;
     align-items: center;
     width: 30px;
     height: 30px;
-    background-color: transparent;
+    border: 2px solid #000;
     transition: all 0.2s;
-    border: 2px solid #fff;
 }
 
 .control-btn:hover {
-    background-color: #fff;
-    color: #000;
+    background-color: #000;
+    color: #fff;
 }
 
 .time-display {
     font-size: 14px;
-    color: #fff;
+    color: #000;
     min-width: 40px;
-    font-family: 'Courier Prime', monospace;
     font-weight: bold;
+}
+
+.youtube-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background-color: transparent;
+    color: #ff0000;
+    text-decoration: none;
+    border: 2px solid #ff0000;
+    transition: all 0.2s;
+    margin-left: 10px;
+    font-size: 18px;
+}
+
+.youtube-icon {
+    fill: #ff0000;
+    width: 18px;
+    height: 18px;
+}
+
+.youtube-link:hover {
+    background-color: #ff0000;
+    color: #fff;
+}
+
+.youtube-link:hover .youtube-icon {
+    fill: #fff;
+}
+
+.youtube-player-wrapper {
+    height: 1px;
+    width: 1px;
+    overflow: hidden;
+    opacity: 0;
+    position: absolute;
 }
 
 /* Error states */
@@ -765,26 +802,6 @@ footer a:hover {
 
 .pdf-icon {
     margin-right: 10px;
-}
-
-/* YouTube link styling */
-.youtube-link {
-    color: #fff;
-    text-decoration: none;
-    border: 2px solid #fff;
-    padding: 2px 5px;
-    margin-left: 10px;
-    display: inline-flex;
-    align-items: center;
-}
-
-.youtube-link:hover {
-    background-color: #fff;
-    color: #000;
-}
-
-.youtube-icon {
-    margin-right: 0;
 }
 
 /* Makes the brutalist design responsive */
