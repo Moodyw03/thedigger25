@@ -199,6 +199,13 @@ header p {
     border-bottom: 1px solid #eee;
 }
 
+.track-item.now-playing {
+    background-color: #ffffcc;
+    border-left: 5px solid #ff0000;
+    padding-left: 10px;
+    margin-left: -15px;
+}
+
 .track-info {
     display: flex;
     justify-content: space-between;
@@ -821,6 +828,13 @@ footer a:hover {
     padding-top: 20px;
 }
 
+/* Playback controls container */
+.playback-controls {
+    display: flex;
+    gap: 10px;
+    margin-left: 15px;
+}
+
 .download-pdf-btn {
     display: inline-flex;
     align-items: center;
@@ -839,6 +853,63 @@ footer a:hover {
     color: #000;
 }
 
+/* Play All button styles */
+.play-all-button {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 20px;
+    background-color: #ff0000;
+    color: #fff;
+    text-decoration: none;
+    font-weight: bold;
+    text-transform: uppercase;
+    border: 3px solid #000;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.play-all-button:hover {
+    background-color: #cc0000;
+}
+
+.play-all-button:disabled {
+    background-color: #666;
+    cursor: not-allowed;
+}
+
+.play-all-icon {
+    margin-right: 10px;
+}
+
+/* Skip track button styles */
+.skip-track-button {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 15px;
+    background-color: #000;
+    color: #fff;
+    text-decoration: none;
+    font-weight: bold;
+    text-transform: uppercase;
+    border: 3px solid #000;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.skip-track-button:hover:not(:disabled) {
+    background-color: #333;
+}
+
+.skip-track-button:disabled {
+    background-color: #666;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.skip-icon {
+    margin-right: 5px;
+}
+
 .pdf-icon {
     margin-right: 10px;
 }
@@ -853,6 +924,23 @@ footer a:hover {
     
     header h1 {
         font-size: 2.2rem;
+    }
+    
+    .results-actions {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .playback-controls {
+        margin-left: 0;
+        width: 100%;
+    }
+    
+    .play-all-button, 
+    .skip-track-button,
+    .download-pdf-btn {
+        font-size: 0.9rem;
+        padding: 10px 15px;
     }
     
     .mix-header {

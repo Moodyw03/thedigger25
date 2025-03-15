@@ -60,6 +60,22 @@
             </svg>
             Download PDF
         </a>
+        
+        <div class="playback-controls">
+            <button id="play-all-btn" class="play-all-button" title="Play all tracks">
+                <svg class="play-all-icon" viewBox="0 0 24 24" width="24" height="24">
+                    <path d="M8 5v14l11-7z" fill="currentColor"/>
+                </svg>
+                Play All Tracks
+            </button>
+            
+            <button id="skip-track-btn" class="skip-track-button" title="Skip to next track" disabled>
+                <svg class="skip-icon" viewBox="0 0 24 24" width="24" height="24">
+                    <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" fill="currentColor"/>
+                </svg>
+                Skip
+            </button>
+        </div>
     </div>
     
     <div class="filters">
@@ -208,6 +224,13 @@ document.addEventListener('DOMContentLoaded', function() {
     let updateTimeInterval;
     let activeTrackItem = null;
     let waitingQueue = [];
+    
+    // Play All tracks functionality
+    let trackQueue = [];
+    let currentTrackIndex = -1;
+    let isPlayingAll = false;
+    let switchTrackTimeout = null;
+    const TRACK_PLAY_DURATION = 120000; // 2 minutes in milliseconds
 
     // Initialize YouTube API
     window.onYouTubeIframeAPIReady = function() {
@@ -261,12 +284,37 @@ document.addEventListener('DOMContentLoaded', function() {
         if (event.data === YT.PlayerState.PLAYING) {
             playPauseBtn.textContent = '⏸';
             startTimeUpdate(event.target, timeDisplay);
+            
+            // If we're in play all mode and this is a track ending, set up the next track
+            if (isPlayingAll && !switchTrackTimeout) {
+                switchTrackTimeout = setTimeout(() => {
+                    playNextTrack();
+                }, TRACK_PLAY_DURATION);
+            }
         } else if (event.data === YT.PlayerState.PAUSED) {
             playPauseBtn.textContent = '▶';
             stopTimeUpdate();
+            
+            // If we're in play all mode and user paused, clear the timeout
+            if (isPlayingAll && switchTrackTimeout) {
+                clearTimeout(switchTrackTimeout);
+                switchTrackTimeout = null;
+            }
         } else if (event.data === YT.PlayerState.ENDED) {
             playPauseBtn.textContent = '▶';
             stopTimeUpdate();
+            
+            // If we're in play all mode and the video ended, play the next track
+            if (isPlayingAll) {
+                // Clear any existing timeout since the track ended
+                if (switchTrackTimeout) {
+                    clearTimeout(switchTrackTimeout);
+                    switchTrackTimeout = null;
+                }
+                
+                // Play the next track immediately
+                playNextTrack();
+            }
         }
     }
 
@@ -301,7 +349,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     'disablekb': 1,
                     'fs': 0,
                     'modestbranding': 1,
-                    'start': 120,  // Start at 2 minutes
+                    'start': 120,  // Start at 2 minutes (120 seconds)
                     'iv_load_policy': 3
                 },
                 events: {
@@ -326,13 +374,167 @@ document.addEventListener('DOMContentLoaded', function() {
                         const errorMsg = errorMessages[event.data] || "Unknown error playing video";
                         timeDisplay.textContent = "Error";
                         timeDisplay.title = errorMsg;
+                        
+                        // If in play all mode and there's an error, move to the next track
+                        if (isPlayingAll) {
+                            setTimeout(() => playNextTrack(), 1000);
+                        }
                     }
                 }
             });
             return player;
         } catch (e) {
             console.error("Error creating YouTube player:", e);
+            
+            // If in play all mode and there's an error, move to the next track
+            if (isPlayingAll) {
+                setTimeout(() => playNextTrack(), 1000);
+            }
+            
             return null;
+        }
+    }
+    
+    // Play All functionality
+    const playAllBtn = document.getElementById('play-all-btn');
+    const skipTrackBtn = document.getElementById('skip-track-btn');
+    
+    if (playAllBtn) {
+        playAllBtn.addEventListener('click', function() {
+            // If already playing, stop the current playback
+            if (isPlayingAll) {
+                stopPlayAll();
+                return;
+            }
+            
+            // Initialize the track queue
+            initializeTrackQueue();
+            
+            // Start playing if we have tracks
+            if (trackQueue.length > 0) {
+                isPlayingAll = true;
+                currentTrackIndex = -1;
+                playAllBtn.textContent = "Stop Playback";
+                playAllBtn.style.backgroundColor = "#666";
+                
+                // Enable skip button when playback starts
+                if (skipTrackBtn) {
+                    skipTrackBtn.disabled = false;
+                }
+                
+                // Begin playback with the first track
+                playNextTrack();
+            } else {
+                alert("No tracks found to play!");
+            }
+        });
+    }
+    
+    // Skip to next track button
+    if (skipTrackBtn) {
+        skipTrackBtn.addEventListener('click', function() {
+            if (isPlayingAll) {
+                // Clear any existing timeout
+                if (switchTrackTimeout) {
+                    clearTimeout(switchTrackTimeout);
+                    switchTrackTimeout = null;
+                }
+                
+                // Skip to the next track
+                playNextTrack();
+            }
+        });
+    }
+    
+    // Initialize the track queue
+    function initializeTrackQueue() {
+        trackQueue = [];
+        
+        // Get all playable tracks
+        const playButtons = document.querySelectorAll('.play-button');
+        playButtons.forEach(button => {
+            const trackName = decodeURIComponent(button.getAttribute('data-track'));
+            const trackItem = button.closest('.track-item');
+            
+            trackQueue.push({
+                name: trackName,
+                element: trackItem,
+                button: button
+            });
+        });
+        
+        console.log(`Initialized track queue with ${trackQueue.length} tracks`);
+    }
+    
+    // Play the next track in the queue
+    function playNextTrack() {
+        // Clear any existing timeout
+        if (switchTrackTimeout) {
+            clearTimeout(switchTrackTimeout);
+            switchTrackTimeout = null;
+        }
+        
+        // Remove highlighting from all tracks
+        document.querySelectorAll('.track-item.now-playing').forEach(item => {
+            item.classList.remove('now-playing');
+        });
+        
+        // Move to the next track
+        currentTrackIndex++;
+        
+        // Check if we've reached the end of the queue
+        if (currentTrackIndex >= trackQueue.length) {
+            console.log("Reached end of track queue, stopping playback");
+            stopPlayAll();
+            return;
+        }
+        
+        const track = trackQueue[currentTrackIndex];
+        console.log(`Playing track ${currentTrackIndex + 1}/${trackQueue.length}: ${track.name}`);
+        
+        // Highlight the current track
+        track.element.classList.add('now-playing');
+        
+        // Simulate clicking the play button for this track
+        track.button.click();
+        
+        // Scroll to the current track
+        track.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    
+    // Stop playing all tracks
+    function stopPlayAll() {
+        isPlayingAll = false;
+        
+        // Reset the play all button
+        if (playAllBtn) {
+            playAllBtn.textContent = "Play All Tracks";
+            playAllBtn.style.backgroundColor = "";
+        }
+        
+        // Disable the skip button
+        if (skipTrackBtn) {
+            skipTrackBtn.disabled = true;
+        }
+        
+        // Clear any scheduled track change
+        if (switchTrackTimeout) {
+            clearTimeout(switchTrackTimeout);
+            switchTrackTimeout = null;
+        }
+        
+        // Remove highlighting from all tracks
+        document.querySelectorAll('.track-item.now-playing').forEach(item => {
+            item.classList.remove('now-playing');
+        });
+        
+        // Stop the current player if any
+        if (currentPlayer) {
+            try {
+                currentPlayer.pauseVideo();
+            } catch (e) {
+                console.error("Error pausing video:", e);
+            }
         }
     }
 
@@ -422,6 +624,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     timeDisplay.textContent = "Not found";
                     timeDisplay.classList.remove('loading');
                     youtubeLink.href = `https://www.youtube.com/results?search_query=${encodeURIComponent(trackName)}`;
+                    
+                    // If in play all mode and no video found, move to the next track
+                    if (isPlayingAll) {
+                        setTimeout(() => playNextTrack(), 1000);
+                    }
                 }
             })
             .catch(error => {
@@ -429,6 +636,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 timeDisplay.textContent = "Error";
                 timeDisplay.classList.remove('loading');
                 youtubeLink.href = `https://www.youtube.com/results?search_query=${encodeURIComponent(trackName)}`;
+                
+                // If in play all mode and there's an error, move to the next track
+                if (isPlayingAll) {
+                    setTimeout(() => playNextTrack(), 1000);
+                }
             });
     }
 });
