@@ -163,6 +163,14 @@
         color: white;
         transition: width 0.5s;
     }
+    
+    /* Progress details */
+    .progress-details {
+        font-size: 0.9rem;
+        color: #555;
+        margin: 5px 0 15px 0;
+        font-style: italic;
+    }
 </style>
 {% endblock %}
 
@@ -182,7 +190,8 @@
     <!-- Processing state -->
     <div id="processingState" class="processing-state">
         <div class="loader"></div>
-        <p class="loading-text">PLEASE WAIT WHILE WE COLLECT TRACKLISTS AND GENERATE YOUR PDF...</p>
+        <p class="loading-text" id="processingText">PLEASE WAIT WHILE WE COLLECT TRACKLISTS AND GENERATE YOUR PDF...</p>
+        <p class="progress-details" id="progressDetails"></p>
         <div class="progress-container">
             <div class="progress-bar" id="processProgress">0%</div>
         </div>
@@ -291,6 +300,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             const status = data.status;
+            const meta = data.meta || {};
             
             if (status === 'queued') {
                 showState('queued');
@@ -299,8 +309,29 @@ document.addEventListener('DOMContentLoaded', function() {
             } 
             else if (status === 'started') {
                 showState('processing');
-                updateProgress(processProgress, 50);
-                setTimeout(checkJobStatus, 3000);
+                
+                // Use the progress from job meta if available, otherwise default to 50%
+                const progress = meta.progress || 50;
+                const statusText = meta.status || 'Processing...';
+                const currentMix = meta.current_mix || 0;
+                const totalMixes = meta.total_mixes || 0;
+                
+                // Update progress bar
+                updateProgress(processProgress, progress);
+                
+                // Update status text if provided
+                document.getElementById('processingText').textContent = statusText.toUpperCase();
+                
+                // Show detailed progress if available
+                const progressDetails = document.getElementById('progressDetails');
+                if (currentMix > 0 && totalMixes > 0) {
+                    progressDetails.textContent = `Processing mix ${currentMix} of ${totalMixes}`;
+                    progressDetails.style.display = 'block';
+                } else {
+                    progressDetails.style.display = 'none';
+                }
+                
+                setTimeout(checkJobStatus, 1500);
             } 
             else if (status === 'finished') {
                 updateProgress(processProgress, 100);
@@ -314,7 +345,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } 
             else if (status === 'failed') {
                 showState('error');
-                errorMessage.textContent = 'PDF GENERATION FAILED: ' + (data.error_message || 'UNKNOWN ERROR');
+                const errorMsg = meta.error || data.error_message || 'UNKNOWN ERROR';
+                errorMessage.textContent = 'PDF GENERATION FAILED: ' + errorMsg;
             } 
             else {
                 // Unknown status

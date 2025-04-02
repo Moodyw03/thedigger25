@@ -103,7 +103,7 @@ def get_job_status(job_id):
     response = {
         "job_id": job.id,
         "status": job.get_status(), # Returns 'queued', 'started', 'finished', 'failed', etc.
-        "meta": job.meta # Any metadata associated with the job
+        "meta": job.meta # Include all metadata
     }
     
     if job.is_failed:
@@ -160,7 +160,7 @@ def start_pdf_job():
         
         # Enqueue PDF generation as a background job
         # First, fetch the data, then generate the PDF
-        job = q.enqueue('app.generate_pdf_background', artist_name, job_timeout=1800)  # 30 minutes timeout
+        job = q.enqueue('app.generate_pdf_background', artist_name, job_timeout=3600)  # 60 minutes timeout
         
         logger.info(f"PDF job enqueued with ID: {job.id}")
         return jsonify({"job_id": job.id})
@@ -231,32 +231,41 @@ def generate_pdf_background(artist_name):
     try:
         logger.info(f"Background job: Generating PDF for artist: {artist_name}")
         
+        # Access the current job to update progress
+        from rq import get_current_job
+        job = get_current_job()
+        
+        # Set initial progress
+        if job:
+            job.meta['progress'] = 5
+            job.meta['status'] = 'Fetching artist data...'
+            job.save_meta()
+        
         # Fetch the data
         mixes = scraper.main(artist_name)
         
         if not mixes:
             return {"error": f"No tracklists found for '{artist_name}'"}
         
-        # Performance optimization for very large catalogs
-        if len(mixes) > 100:
-            logger.info(f"Large catalog detected ({len(mixes)} mixes). Limiting to most recent 100 mixes for PDF.")
-            # Sort by date, most recent first (when date is available)
-            mixes_with_date = [mix for mix in mixes if mix.get('date')]
-            mixes_without_date = [mix for mix in mixes if not mix.get('date')]
-            
-            # Sort mixes with dates by date (most recent first)
-            mixes_with_date.sort(key=lambda x: x.get('date', ''), reverse=True)
-            
-            # Take the most recent 90 mixes with dates + 10 without dates if available
-            limited_mixes = mixes_with_date[:90]
-            if mixes_without_date:
-                limited_mixes.extend(mixes_without_date[:min(10, len(mixes_without_date))])
-            
-            logger.info(f"Limited PDF to {len(limited_mixes)} mixes for performance reasons")
-            mixes = limited_mixes
+        # Log the total number of mixes found - using all mixes without limitation
+        logger.info(f"Found {len(mixes)} total mixes for {artist_name}. Generating complete PDF with all mixes.")
         
-        # Generate the PDF
-        pdf_data = generate_pdf(artist_name, mixes)
+        # Update progress after fetching data
+        if job:
+            job.meta['progress'] = 30
+            job.meta['status'] = f'Found {len(mixes)} mixes. Starting PDF generation...'
+            job.meta['total_mixes'] = len(mixes)
+            job.meta['current_mix'] = 0
+            job.save_meta()
+        
+        # Generate the PDF with all mixes (removed the mix limitation)
+        pdf_data = generate_pdf(artist_name, mixes, job)
+        
+        # Final progress update
+        if job:
+            job.meta['progress'] = 100
+            job.meta['status'] = 'PDF generation complete!'
+            job.save_meta()
         
         # Return both the PDF data and the artist name
         return {
@@ -267,11 +276,15 @@ def generate_pdf_background(artist_name):
         }
         
     except Exception as e:
+        # Update progress on error
+        if 'job' in locals() and job:
+            job.meta['error'] = str(e)
+            job.save_meta()
         logger.error(f"Error in background PDF generation for {artist_name}: {str(e)}")
         raise
 
 # --- Keep existing PDF generation function ---
-def generate_pdf(artist_name, mixes):
+def generate_pdf(artist_name, mixes, job=None):
     """Generate a PDF document with all tracklists for an artist."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, title=f"Tracklists for {artist_name}", author="The Digger App")
@@ -296,12 +309,30 @@ def generate_pdf(artist_name, mixes):
     content.append(generated)
     content.append(Spacer(1, 0.5 * inch))
     
+    # Update progress at the start of PDF generation
+    if job:
+        job.meta['progress'] = 35
+        job.meta['status'] = 'Creating PDF document structure...'
+        job.save_meta()
+    
+    # Calculate progress increment per mix
+    progress_increment = 60 / max(len(mixes), 1)  # 35% to 95%
+    current_progress = 35
+    
     # Process each mix
-    for mix in mixes:
+    for i, mix in enumerate(mixes):
         title_text = mix.get("title", "Untitled Mix")
         if mix.get("date"):
             title_text = f"{mix.get('date')} - {title_text}"
         content.append(Paragraph(title_text, styles['MixTitle']))
+        
+        # Update progress and status periodically
+        if job and i % max(1, len(mixes) // 10) == 0:  # Update every ~10% of mixes
+            current_progress = min(35 + progress_increment * i, 95)
+            job.meta['progress'] = round(current_progress)
+            job.meta['status'] = f'Processing mix {i+1} of {len(mixes)}: {title_text}'
+            job.meta['current_mix'] = i + 1
+            job.save_meta()
         
         tracks = mix.get("tracks", [])
         if tracks:
@@ -311,7 +342,9 @@ def generate_pdf(artist_name, mixes):
                 content.append(Paragraph(track_text, styles['TrackItem']))
                 
                 # Build the document in chunks if it gets very large
-                if len(content) > 500:  # Build document in chunks of 500 elements
+                # Reduced chunk size for very large catalogs
+                chunk_threshold = 300 if len(mixes) > 200 else 500
+                if len(content) > chunk_threshold:
                     logger.info(f"Building PDF document chunk with {len(content)} elements")
                     doc.build(content, canvasmaker=NumberedCanvas)
                     content = []  # Reset content for next chunk
@@ -319,6 +352,18 @@ def generate_pdf(artist_name, mixes):
             content.append(Paragraph("No tracklist available", styles['TrackItem']))
         
         content.append(Spacer(1, 0.1 * inch))
+        
+        # Generate PDF in chunks after each mix for very large catalogs
+        if len(mixes) > 300 and len(content) > 100:
+            logger.info(f"Building PDF document chunk after mix with {len(content)} elements")
+            doc.build(content, canvasmaker=NumberedCanvas)
+            content = []  # Reset content for next chunk
+    
+    # Final progress update before building the document
+    if job:
+        job.meta['progress'] = 95
+        job.meta['status'] = 'Finalizing PDF document...'
+        job.save_meta()
     
     try:
         # Build final document with any remaining content
