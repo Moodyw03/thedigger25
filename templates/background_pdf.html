@@ -1,0 +1,352 @@
+{% extends 'base.html' %}
+
+{% block title %}Generating PDF - The Digger{% endblock %}
+
+{% block head %}
+<style>
+    /* Inline styles to match the brutalist design */
+    @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
+    
+    body {
+        font-family: 'Courier Prime', monospace;
+    }
+    
+    .loading-container {
+        text-align: center;
+        padding: 40px;
+        max-width: 600px;
+        margin: 50px auto;
+        background-color: #ffffff;
+        border: 4px solid #000;
+        position: relative;
+    }
+    
+    .loader {
+        border: 8px solid #f0f0f0;
+        border-radius: 0;
+        border-top: 8px solid #000;
+        width: 80px;
+        height: 80px;
+        margin: 30px auto;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .loading-text {
+        margin: 30px 0;
+        font-size: 1.2rem;
+        color: #000;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    
+    .loading-hint {
+        font-size: 1rem;
+        color: #000;
+        margin-top: 30px;
+        border-top: 2px dashed #000;
+        padding-top: 20px;
+    }
+    
+    .loading-title {
+        margin: 0;
+        padding: 15px;
+        font-size: 1.8rem;
+        background-color: #000;
+        color: #fff;
+        margin: -40px -40px 30px -40px;
+        letter-spacing: 1px;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    
+    .success-container {
+        background-color: #ffff00;
+        border: 4px solid #000;
+        padding: 30px;
+        margin-top: 30px;
+        color: #000;
+        text-transform: uppercase;
+        display: none; /* Hide success container by default */
+    }
+    
+    .error-container {
+        background-color: #ff3333;
+        border: 4px solid #000;
+        padding: 30px;
+        margin-top: 30px;
+        color: #fff;
+        text-transform: uppercase;
+        display: none; /* Hide error container by default */
+    }
+    
+    .success-icon {
+        font-size: 48px;
+        margin-bottom: 20px;
+        font-weight: bold;
+    }
+    
+    .error-icon {
+        font-size: 48px;
+        margin-bottom: 20px;
+        font-weight: bold;
+    }
+    
+    .back-button {
+        display: inline-block;
+        background-color: #000;
+        color: #fff;
+        border: 3px solid #000;
+        padding: 10px 20px;
+        margin-top: 20px;
+        text-decoration: none;
+        font-weight: bold;
+        text-transform: uppercase;
+        transition: all 0.2s;
+    }
+    
+    .back-button:hover {
+        background-color: #fff;
+        color: #000;
+    }
+    
+    .download-link {
+        color: #000;
+        font-weight: bold;
+        text-decoration: none;
+        border-bottom: 2px solid #000;
+        padding-bottom: 2px;
+    }
+    
+    .download-link:hover {
+        background-color: #ffff00;
+    }
+
+    /* States */
+    .queued-state, .processing-state, .downloading-state, .success-state, .error-state {
+        display: none;
+    }
+    
+    /* Progress bar */
+    .progress-container {
+        width: 100%;
+        background-color: #f0f0f0;
+        border: 2px solid #000;
+        margin: 20px 0;
+    }
+    
+    .progress-bar {
+        width: 0%;
+        height: 30px;
+        background-color: #000;
+        text-align: center;
+        line-height: 30px;
+        color: white;
+        transition: width 0.5s;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="loading-container" id="loadingContainer">
+    <h2 class="loading-title">GENERATING PDF FOR {{ artist_name|upper }}</h2>
+    
+    <!-- Queued state -->
+    <div id="queuedState" class="queued-state">
+        <div class="loader"></div>
+        <p class="loading-text">YOUR PDF GENERATION JOB IS QUEUED...</p>
+        <div class="progress-container">
+            <div class="progress-bar" id="queueProgress">0%</div>
+        </div>
+    </div>
+    
+    <!-- Processing state -->
+    <div id="processingState" class="processing-state">
+        <div class="loader"></div>
+        <p class="loading-text">PLEASE WAIT WHILE WE COLLECT TRACKLISTS AND GENERATE YOUR PDF...</p>
+        <div class="progress-container">
+            <div class="progress-bar" id="processProgress">0%</div>
+        </div>
+    </div>
+    
+    <!-- Downloading state -->
+    <div id="downloadingState" class="downloading-state">
+        <div class="loader"></div>
+        <p class="loading-text">YOUR PDF IS READY! DOWNLOADING NOW...</p>
+        <p class="loading-hint">If the download doesn't start automatically, <a href="#" id="downloadLink" class="download-link">CLICK HERE</a>.</p>
+    </div>
+    
+    <!-- Success state -->
+    <div id="successState" class="success-state">
+        <div class="success-icon">✓</div>
+        <h3>DOWNLOAD COMPLETE</h3>
+        <p>YOUR PDF WITH TRACKLISTS FOR {{ artist_name|upper }} HAS BEEN DOWNLOADED</p>
+        <a href="{{ url_for('index') }}" class="back-button">BACK TO HOME</a>
+    </div>
+    
+    <!-- Error state -->
+    <div id="errorState" class="error-state">
+        <div class="error-icon">✗</div>
+        <h3>ERROR</h3>
+        <p id="errorMessage">SOMETHING WENT WRONG WITH YOUR PDF GENERATION</p>
+        <a href="{{ url_for('index') }}" class="back-button">BACK TO HOME</a>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Get elements
+    const queuedState = document.getElementById('queuedState');
+    const processingState = document.getElementById('processingState');
+    const downloadingState = document.getElementById('downloadingState');
+    const successState = document.getElementById('successState');
+    const errorState = document.getElementById('errorState');
+    const downloadLink = document.getElementById('downloadLink');
+    const queueProgress = document.getElementById('queueProgress');
+    const processProgress = document.getElementById('processProgress');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    // Show appropriate state
+    function showState(state) {
+        queuedState.style.display = state === 'queued' ? 'block' : 'none';
+        processingState.style.display = state === 'processing' ? 'block' : 'none';
+        downloadingState.style.display = state === 'downloading' ? 'block' : 'none';
+        successState.style.display = state === 'success' ? 'block' : 'none';
+        errorState.style.display = state === 'error' ? 'block' : 'none';
+    }
+    
+    // Update progress bar
+    function updateProgress(progressBar, percentage) {
+        progressBar.style.width = percentage + '%';
+        progressBar.textContent = percentage + '%';
+    }
+    
+    // Start a PDF generation job
+    let jobId = null;
+    let downloadStarted = false;
+    
+    // Submit the job
+    function submitPdfJob() {
+        showState('queued');
+        updateProgress(queueProgress, 10);
+        
+        const formData = new FormData();
+        formData.append('artist_name', '{{ artist_name }}');
+        
+        fetch('/start_pdf_job', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showState('error');
+                errorMessage.textContent = data.error;
+                return;
+            }
+            
+            jobId = data.job_id;
+            updateProgress(queueProgress, 25);
+            
+            // Start checking job status
+            checkJobStatus();
+        })
+        .catch(error => {
+            showState('error');
+            errorMessage.textContent = 'FAILED TO START PDF JOB: ' + error;
+        });
+    }
+    
+    // Check job status
+    function checkJobStatus() {
+        if (!jobId) return;
+        
+        fetch(`/job/${jobId}/status`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showState('error');
+                errorMessage.textContent = data.error;
+                return;
+            }
+            
+            const status = data.status;
+            
+            if (status === 'queued') {
+                showState('queued');
+                updateProgress(queueProgress, 50);
+                setTimeout(checkJobStatus, 2000);
+            } 
+            else if (status === 'started') {
+                showState('processing');
+                updateProgress(processProgress, 50);
+                setTimeout(checkJobStatus, 3000);
+            } 
+            else if (status === 'finished') {
+                updateProgress(processProgress, 100);
+                showState('downloading');
+                
+                // Start the download
+                if (!downloadStarted) {
+                    downloadStarted = true;
+                    downloadPdf();
+                }
+            } 
+            else if (status === 'failed') {
+                showState('error');
+                errorMessage.textContent = 'PDF GENERATION FAILED: ' + (data.error_message || 'UNKNOWN ERROR');
+            } 
+            else {
+                // Unknown status
+                setTimeout(checkJobStatus, 2000);
+            }
+        })
+        .catch(error => {
+            console.error('Error checking job status:', error);
+            // Continue checking despite errors
+            setTimeout(checkJobStatus, 5000);
+        });
+    }
+    
+    // Download the PDF
+    function downloadPdf() {
+        if (!jobId) return;
+        
+        // Update download link
+        downloadLink.href = `/get_pdf/${jobId}`;
+        
+        // Create a hidden iframe to trigger the download
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = `/get_pdf/${jobId}`;
+        document.body.appendChild(iframe);
+        
+        // Show success after a delay to allow download to start
+        setTimeout(() => {
+            showState('success');
+        }, 3000);
+    }
+    
+    // Manual download
+    downloadLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (jobId) {
+            // Open in a new tab instead of iframe
+            window.open(`/get_pdf/${jobId}`, '_blank');
+            
+            // Show success state after a short delay
+            setTimeout(() => {
+                showState('success');
+            }, 1000);
+        }
+    });
+    
+    // Start the process
+    submitPdfJob();
+});
+</script>
+{% endblock %} 

@@ -141,9 +141,158 @@ def get_job_result(job_id):
     # Return the actual result from the job
     return jsonify({"status": "finished", "data": job.result})
 
+# --- PDF Generation Background Job Routes ---
+@app.route("/start_pdf_job", methods=['POST'])
+def start_pdf_job():
+    """Enqueue a PDF generation job and return the job ID."""
+    artist_name = request.form.get("artist_name", "")
+    
+    if not artist_name:
+        return jsonify({"error": "Artist name is required"}), 400
+    
+    if q is None:
+        logger.error("Cannot enqueue PDF job: RQ Queue not available")
+        return jsonify({"error": "Background task queue is not available"}), 503
 
-# --- Keep other routes like API, PDF generation, error handlers ---
-# Note: PDF generation might also need to be backgrounded if it becomes slow
+    try:
+        logger.info(f"Enqueuing PDF generation job for artist: {artist_name}")
+        
+        # Enqueue PDF generation as a background job
+        # First, fetch the data, then generate the PDF
+        job = q.enqueue('app.generate_pdf_background', artist_name, job_timeout=900) # 15 minutes timeout
+        
+        logger.info(f"PDF job enqueued with ID: {job.id}")
+        return jsonify({"job_id": job.id})
+    
+    except Exception as e:
+        logger.error(f"Error enqueuing PDF job for {artist_name}: {str(e)}")
+        return jsonify({"error": f"An error occurred while starting PDF generation: {str(e)}"}), 500
+
+@app.route("/get_pdf/<job_id>")
+def get_pdf(job_id):
+    """Retrieve a generated PDF from a completed job."""
+    if q is None:
+        return jsonify({"error": "Background task queue is not available"}), 503
+    
+    try:
+        job = q.fetch_job(job_id)
+    except Exception as e:
+        logger.error(f"Error fetching PDF job {job_id}: {e}")
+        return jsonify({"error": "Failed to fetch PDF job"}), 500
+
+    if job is None:
+        return jsonify({"error": "PDF job not found"}), 404
+
+    if not job.is_finished:
+        return jsonify({"error": "PDF generation not yet complete", "status": job.get_status()}), 202
+
+    if job.is_failed:
+        error_message = job.exc_info.strip().split('\n')[-1] if job.exc_info else "Unknown error"
+        return jsonify({"error": f"PDF generation failed: {error_message}"}), 500
+
+    if not job.result:
+        return jsonify({"error": "PDF generation completed but no result was returned"}), 500
+
+    # Extract data from job result
+    pdf_data = job.result.get("pdf_data")
+    artist_name = job.result.get("artist_name")
+    
+    if not pdf_data:
+        return jsonify({"error": "PDF generation result is missing data"}), 500
+
+    # Prepare response with PDF file
+    filename = f"tracklists_{artist_name.replace(' ', '_')}.pdf"
+    response = make_response(pdf_data)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+@app.route("/background_pdf")
+def background_pdf():
+    """Show loading page for background PDF generation."""
+    artist_name = request.args.get("artist_name", "")
+    if not artist_name:
+        return render_template('index.html', error="Please enter an artist name", year=datetime.datetime.now().year)
+    
+    try:
+        return render_template('background_pdf.html', artist_name=artist_name, year=datetime.datetime.now().year)
+    except Exception as e:
+        logger.error(f"Error showing background PDF page for {artist_name}: {str(e)}")
+        return render_template('index.html', artist_name=artist_name, error=f"An error occurred: {str(e)}", year=datetime.datetime.now().year)
+
+# --- PDF Generation Functions ---
+def generate_pdf_background(artist_name):
+    """Background job function for PDF generation.
+    This runs in the worker process, not the web process."""
+    try:
+        logger.info(f"Background job: Generating PDF for artist: {artist_name}")
+        
+        # Fetch the data
+        mixes = scraper.main(artist_name)
+        
+        if not mixes:
+            return {"error": f"No tracklists found for '{artist_name}'"}
+        
+        # Generate the PDF
+        pdf_data = generate_pdf(artist_name, mixes)
+        
+        # Return both the PDF data and the artist name
+        return {
+            "artist_name": artist_name,
+            "pdf_data": pdf_data,
+            "tracks_count": sum(len(mix.get("tracks", [])) for mix in mixes),
+            "mixes_count": len(mixes)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in background PDF generation for {artist_name}: {str(e)}")
+        raise
+
+# --- Keep existing PDF generation function ---
+def generate_pdf(artist_name, mixes):
+    """Generate a PDF document with all tracklists for an artist."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, title=f"Tracklists for {artist_name}", author="The Digger App")
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='MixTitle', parent=styles['Heading2'], spaceAfter=12))
+    styles.add(ParagraphStyle(name='TrackItem', parent=styles['Normal'], leftIndent=20, spaceAfter=3))
+    content = []
+    title = Paragraph(f"Tracklists for {artist_name}", styles['Title'])
+    content.append(title)
+    content.append(Spacer(1, 0.25 * inch))
+    mixes_with_tracklists = sum(1 for mix in mixes if mix.get("has_tracklist", False))
+    total_tracks = sum(len(mix.get("tracks", [])) for mix in mixes)
+    summary = Paragraph(f"Found {total_tracks} tracks across {mixes_with_tracklists} mixes with tracklists (total of {len(mixes)} mixes)", styles['Normal'])
+    content.append(summary)
+    content.append(Spacer(1, 0.25 * inch))
+    generated = Paragraph(f"Generated on {datetime.datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}", styles['Italic'])
+    content.append(generated)
+    content.append(Spacer(1, 0.5 * inch))
+    for mix in mixes:
+        title_text = mix.get("title", "Untitled Mix")
+        if mix.get("date"):
+            title_text = f"{mix.get('date')} - {title_text}"
+        content.append(Paragraph(title_text, styles['MixTitle']))
+        tracks = mix.get("tracks", [])
+        if tracks:
+            for i, track in enumerate(tracks):
+                track_text = f"{i + 1}. {track}"
+                content.append(Paragraph(track_text, styles['TrackItem']))
+        else:
+            content.append(Paragraph("No tracklist available", styles['TrackItem']))
+        content.append(Spacer(1, 0.1 * inch))
+    try:
+        doc.build(content)
+    except Exception as build_error:
+        logger.error(f"Error building PDF content: {build_error}")
+        raise # Re-raise the error after logging
+        
+    pdf_data = buffer.getvalue()
+    buffer.close()
+    return pdf_data
 
 # Original /search route is removed as it's replaced by the job submission logic.
 # Original /api/list might still be useful if you want synchronous access,
@@ -242,48 +391,6 @@ def direct_pdf_download():
     except Exception as e:
         logger.error(f"Error processing direct PDF download for {artist_name}: {str(e)}")
         return render_template('index.html', artist_name=artist_name, error=f"An error occurred: {str(e)}", year=datetime.datetime.now().year)
-
-def generate_pdf(artist_name, mixes):
-    """Generate a PDF document with all tracklists for an artist."""
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, title=f"Tracklists for {artist_name}", author="The Digger App")
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='MixTitle', parent=styles['Heading2'], spaceAfter=12))
-    styles.add(ParagraphStyle(name='TrackItem', parent=styles['Normal'], leftIndent=20, spaceAfter=3))
-    content = []
-    title = Paragraph(f"Tracklists for {artist_name}", styles['Title'])
-    content.append(title)
-    content.append(Spacer(1, 0.25 * inch))
-    mixes_with_tracklists = sum(1 for mix in mixes if mix.get("has_tracklist", False))
-    total_tracks = sum(len(mix.get("tracks", [])) for mix in mixes)
-    summary = Paragraph(f"Found {total_tracks} tracks across {mixes_with_tracklists} mixes with tracklists (total of {len(mixes)} mixes)", styles['Normal'])
-    content.append(summary)
-    content.append(Spacer(1, 0.25 * inch))
-    generated = Paragraph(f"Generated on {datetime.datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}", styles['Italic'])
-    content.append(generated)
-    content.append(Spacer(1, 0.5 * inch))
-    for mix in mixes:
-        title_text = mix.get("title", "Untitled Mix")
-        if mix.get("date"):
-            title_text = f"{mix.get('date')} - {title_text}"
-        content.append(Paragraph(title_text, styles['MixTitle']))
-        tracks = mix.get("tracks", [])
-        if tracks:
-            for i, track in enumerate(tracks):
-                track_text = f"{i + 1}. {track}"
-                content.append(Paragraph(track_text, styles['TrackItem']))
-        else:
-            content.append(Paragraph("No tracklist available", styles['TrackItem']))
-        content.append(Spacer(1, 0.1 * inch))
-    try:
-        doc.build(content)
-    except Exception as build_error:
-        logger.error(f"Error building PDF content: {build_error}")
-        raise # Re-raise the error after logging
-        
-    pdf_data = buffer.getvalue()
-    buffer.close()
-    return pdf_data
 
 # Main entry point for development server (not used by Gunicorn)
 # if __name__ == "__main__":
