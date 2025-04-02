@@ -85,44 +85,22 @@ YOUTUBE_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 See `.env.example` for all available options.
 
-## Deployment to Vercel
+## Deployment to Railway
 
-This application is optimized for deployment on Vercel. Follow these steps to deploy:
+This application can be easily deployed on Railway. Follow these steps:
 
-1. Sign up for a Vercel account at [vercel.com](https://vercel.com) if you don't have one
-2. Install the Vercel CLI:
-   ```bash
-   npm install -g vercel
-   ```
-3. Login to Vercel:
-   ```bash
-   vercel login
-   ```
-4. Deploy the application:
-   ```bash
-   vercel
-   ```
-5. For production deployment:
-   ```bash
-   vercel --prod
-   ```
+1.  Sign up for a Railway account at [railway.app](https://railway.app) if you don't have one.
+2.  Create a new project on Railway and choose "Deploy from GitHub repo".
+3.  Connect your GitHub account and select this repository.
+4.  Railway will automatically detect the `Procfile` and `requirements.txt`. It will build and deploy your application.
+5.  **Configure Environment Variables:** Go to your service settings in the Railway dashboard. Under the "Variables" tab, add the necessary environment variables based on your `.env.example` file. Railway injects these variables into your application's environment at runtime.
+6.  Your application should now be deployed and accessible via the URL provided by Railway. Railway handles automatic deployments when you push changes to your connected branch.
 
-### Vercel Optimizations
+### Important Notes for Railway Deployment
 
-This application includes several optimizations for running on Vercel's serverless platform:
-
-1. **In-memory caching** for YouTube video searches and web requests to reduce API calls
-2. **Exponential backoff with jitter** for retry attempts to improve reliability
-3. **Environment variables** for configuration (see `vercel.json`)
-4. **PDF export capability** for saving tracklists without requiring a browser
-5. **Flask API endpoints** for headless operation
-
-### Important Notes for Vercel Deployment
-
-- Serverless functions on Vercel have a maximum execution time (10 seconds on free tier)
-- Web scraping operations might time out if they take too long
-- Consider upgrading to Vercel Pro if you need longer function execution times
-- The application uses caching to reduce API calls and improve performance
+- Railway automatically detects the required start command from the `Procfile`.
+- Dependencies are installed from `requirements.txt`.
+- Ensure all necessary environment variables from `.env.example` are set in the Railway service variables section.
 
 ## Advanced Usage
 
@@ -157,7 +135,7 @@ The application provides the following API endpoints:
 - PDF Generation: ReportLab
 - Audio: YouTube embed API (audio-only mode)
 - Data Source: MixesDB.com
-- Deployment: Vercel serverless platform
+- Deployment: Railway
 
 ## Development
 
