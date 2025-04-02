@@ -232,7 +232,7 @@ def generate_pdf_background(artist_name):
         logger.info(f"Background job: Generating PDF for artist: {artist_name}")
         
         # Access the current job to update progress
-        from rq import get_current_job
+        from rq.job import get_current_job
         job = get_current_job()
         
         # Set initial progress
@@ -481,12 +481,12 @@ def direct_pdf_download():
     return redirect(url_for('background_pdf', artist_name=artist_name))
 
 # Main entry point for development server (not used by Gunicorn)
-# if __name__ == "__main__":
-#     port = int(os.environ.get("PORT", 8080))
-#     debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
-#     host = os.environ.get("FLASK_HOST", "127.0.0.1")
-#     logger.info(f"Starting Flask server on {host}:{port} (Debug: {debug_mode})")
-#     app.run(host=host, port=port, debug=debug_mode)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    logger.info(f"Starting Flask server on {host}:{port} (Debug: {debug_mode})")
+    app.run(host=host, port=port, debug=debug_mode)
 
 # Note: The if __name__ == "__main__" block is commented out 
 # as Gunicorn is used for production (specified in Procfile).
