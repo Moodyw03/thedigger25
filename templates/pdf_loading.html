@@ -3,7 +3,8 @@
 {% block title %}Generating PDF - The Digger{% endblock %}
 
 {% block head %}
-<!-- Remove automatic refresh to give more control over the download process -->
+<!-- We're redirecting to background_pdf now, so this template will be replaced -->
+<!-- But updating it anyway in case it's somehow still accessed -->
 <style>
     /* Inline styles to match the brutalist design */
     @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
@@ -129,121 +130,22 @@
     <!-- Processing state (initial) -->
     <div id="processingState" class="processing-state">
         <div class="loader"></div>
-        <p class="loading-text">PLEASE WAIT WHILE WE COLLECT TRACKLISTS AND GENERATE YOUR PDF...</p>
-    </div>
-    
-    <!-- Downloading state -->
-    <div id="downloadingState" class="downloading-state">
-        <div class="loader"></div>
-        <p class="loading-text">YOUR PDF IS BEING DOWNLOADED...</p>
-        <p class="loading-hint">If the download doesn't start automatically, <a href="{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}" id="downloadLink" class="download-link">CLICK HERE</a>.</p>
+        <p class="loading-text">REDIRECTING TO BACKGROUND PROCESSOR...</p>
     </div>
     
     <!-- Success state -->
     <div id="successContainer" class="success-container">
         <div class="success-icon">✓</div>
-        <h3>DOWNLOAD COMPLETE</h3>
-        <p>YOUR PDF WITH TRACKLISTS FOR {{ artist_name|upper }} HAS BEEN DOWNLOADED</p>
-        <a href="{{ url_for('index') }}" class="back-button">BACK TO HOME</a>
+        <h3>REDIRECTING</h3>
+        <p>YOU ARE BEING REDIRECTED TO THE BACKGROUND PDF GENERATION PAGE</p>
+        <a href="{{ url_for('background_pdf', artist_name=artist_name) }}" class="back-button">GO NOW</a>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Get elements
-    const processingState = document.getElementById('processingState');
-    const downloadingState = document.getElementById('downloadingState');
-    const successContainer = document.getElementById('successContainer');
-    const downloadLink = document.getElementById('downloadLink');
-    
-    // Track download status
-    let pdfGenerated = false;
-    let downloadInitiated = false;
-    let downloadCompleted = false;
-    
-    // Show downloading state
-    function showDownloadingState() {
-        processingState.style.display = 'none';
-        downloadingState.style.display = 'block';
-        successContainer.style.display = 'none';
-        downloadInitiated = true;
-    }
-    
-    // Show success state - only shown after download has been initiated
-    function showSuccessState() {
-        if (downloadInitiated) {
-            processingState.style.display = 'none';
-            downloadingState.style.display = 'none';
-            successContainer.style.display = 'block';
-            downloadCompleted = true;
-        }
-    }
-    
-    // Create a hidden iframe to trigger the PDF download
-    const trackingFrame = document.createElement('iframe');
-    trackingFrame.style.display = 'none';
-    trackingFrame.style.position = 'absolute';
-    trackingFrame.style.left = '-9999px';
-    
-    // Set the source to the PDF download URL
-    trackingFrame.src = "{{ url_for('download_tracklists_pdf', artist_name=artist_name) }}";
-    
-    // When the iframe finishes loading, it means the server has processed the request
-    trackingFrame.onload = function() {
-        pdfGenerated = true;
-        // Show downloading state when PDF is ready
-        showDownloadingState();
-        
-        // Only show success after a reasonable delay to ensure download has started
-        setTimeout(function() {
-            if (!downloadCompleted) {
-                showSuccessState();
-            }
-        }, 3000); // Wait 3 seconds after download started
-    };
-    
-    // Add iframe to document to start the process
-    document.body.appendChild(trackingFrame);
-    
-    // Handle manual download link clicks
-    downloadLink.addEventListener('click', function(e) {
-        // Don't prevent default - we want the download to happen
-        showDownloadingState();
-        
-        // Show success after a reasonable delay
-        setTimeout(function() {
-            if (!downloadCompleted) {
-                showSuccessState();
-            }
-        }, 3000);
-    });
-    
-    // Listen for visibility changes which might indicate user interaction with download
-    document.addEventListener('visibilitychange', function() {
-        // If page becomes visible again and download was initiated but success not shown
-        if (!document.hidden && downloadInitiated && !downloadCompleted) {
-            // User likely responded to download dialog, show success
-            setTimeout(function() {
-                showSuccessState();
-            }, 1000);
-        }
-    });
-    
-    // Wait for a reasonable time after page load before checking status
-    setTimeout(function() {
-        // If processing is still showing but PDF is generated
-        if (pdfGenerated && processingState.style.display !== 'none') {
-            showDownloadingState();
-        }
-        
-        // Safety fallback - if for some reason our detection methods fail,
-        // ensure success is shown, but only after reasonable time for download to complete
-        setTimeout(function() {
-            if (!downloadCompleted) {
-                showSuccessState();
-            }
-        }, 5000);
-    }, 5000);
+    // Automatically redirect to the background PDF page
+    window.location.href = "{{ url_for('background_pdf', artist_name=artist_name) }}";
 });
 </script>
 {% endblock %} 

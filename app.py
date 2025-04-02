@@ -159,7 +159,7 @@ def start_pdf_job():
         
         # Enqueue PDF generation as a background job
         # First, fetch the data, then generate the PDF
-        job = q.enqueue('app.generate_pdf_background', artist_name, job_timeout=900) # 15 minutes timeout
+        job = q.enqueue('app.generate_pdf_background', artist_name, job_timeout=1800)  # 30 minutes timeout
         
         logger.info(f"PDF job enqueued with ID: {job.id}")
         return jsonify({"job_id": job.id})
@@ -351,46 +351,25 @@ def server_error(e):
 # --- PDF Generation (Remains synchronous for now) ---
 @app.route("/download_tracklists_pdf")
 def download_tracklists_pdf():
-    # THIS ROUTE IS SYNCHRONOUS AND MAY TIMEOUT FOR LONG-RUNNING SCRAPES
+    """Redirect to background PDF generation for better reliability."""
     artist_name = request.args.get("artist_name", "")
     if not artist_name:
         return make_response(jsonify({"error": "Artist name is required"}), 400)
     
-    try:
-        logger.info(f"Generating PDF for artist: {artist_name}")
-        # Fetch fresh data (potential timeout)
-        mixes = scraper.main(artist_name)
-        
-        if not mixes:
-            return make_response(jsonify({"error": f"No tracklists found for '{artist_name}'"}), 404)
-        
-        pdf_data = generate_pdf(artist_name, mixes)
-        
-        filename = f"tracklists_{artist_name.replace(' ', '_')}.pdf"
-        response = make_response(pdf_data)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate' 
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF for {artist_name}: {str(e)}")
-        return make_response(jsonify({"error": f"An error occurred generating the PDF: {str(e)}"}), 500)
+    # Redirect to the background PDF page instead
+    logger.info(f"Redirecting direct PDF request for {artist_name} to background processing")
+    return redirect(url_for('background_pdf', artist_name=artist_name))
 
 @app.route("/direct_pdf_download") # This also remains synchronous
 def direct_pdf_download():
+    """Redirect to background PDF generation for better reliability."""
     artist_name = request.args.get("artist_name", "")
     if not artist_name:
         return render_template('index.html', error="Please enter an artist name", year=datetime.datetime.now().year)
-    try:
-        # Show loading page first, but the actual PDF generation will happen synchronously
-        # in download_tracklists_pdf if called from frontend
-        return render_template('pdf_loading.html', artist_name=artist_name, year=datetime.datetime.now().year)
-    except Exception as e:
-        logger.error(f"Error processing direct PDF download for {artist_name}: {str(e)}")
-        return render_template('index.html', artist_name=artist_name, error=f"An error occurred: {str(e)}", year=datetime.datetime.now().year)
+    
+    # Redirect to the background PDF page instead
+    logger.info(f"Redirecting direct PDF download for {artist_name} to background processing")
+    return redirect(url_for('background_pdf', artist_name=artist_name))
 
 # Main entry point for development server (not used by Gunicorn)
 # if __name__ == "__main__":
