@@ -28,6 +28,7 @@ export FLASK_PORT=$PORT
 export FLASK_HOST=$HOST
 # Set debug mode only for development environments (default to disabled)
 export FLASK_DEBUG=${FLASK_DEBUG:-0}
+export FLASK_APP=app.py # Tell Flask where the app is
 
 echo -e "${BLUE}Starting The Digger application...${NC}"
 
@@ -40,8 +41,12 @@ sleep 1
 # Activate virtual environment
 source venv/bin/activate
 
+# Install/update dependencies
+echo -e "${BLUE}Installing/updating dependencies from requirements.txt...${NC}"
+pip install -r requirements.txt
+
 # Make digger.py executable
-chmod +x digger.py
+# chmod +x digger.py # No longer needed as entry point
 
 echo -e "${GREEN}Starting the server on port ${PORT}...${NC}"
 echo -e "${YELLOW}Open your browser to: http://localhost:${PORT}${NC}"
@@ -52,5 +57,5 @@ if [ "$FLASK_DEBUG" = "1" ]; then
     echo -e "${RED}WARNING: Debug mode is enabled. Do not use in production!${NC}"
 fi
 
-# Run the Digger application directly
-./digger.py 
+# Run the Flask app using the development server
+flask run --host=$HOST --port=$PORT 
