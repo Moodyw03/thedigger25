@@ -131,6 +131,21 @@
         display: none;
     }
     
+    /* Download stats */
+    .download-stats {
+        margin: 15px 0;
+        padding: 10px;
+        background-color: #f9f9f9;
+        border: 2px solid #000;
+        text-transform: uppercase;
+        font-weight: bold;
+    }
+    
+    .download-stats strong {
+        font-size: 1.2em;
+        color: #000;
+    }
+    
     /* Progress bar */
     .progress-container {
         width: 100%;
@@ -177,6 +192,7 @@
     <div id="downloadingState" class="downloading-state">
         <div class="loader"></div>
         <p class="loading-text">YOUR PDF IS READY! DOWNLOADING NOW...</p>
+        <div id="downloadStats" class="download-stats"></div>
         <p class="loading-hint">If the download doesn't start automatically, <a href="#" id="downloadLink" class="download-link">CLICK HERE</a>.</p>
     </div>
     
@@ -315,6 +331,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // Download the PDF
     function downloadPdf() {
         if (!jobId) return;
+        
+        // Fetch any results metadata
+        fetch(`/job/${jobId}/result`)
+        .then(response => response.json())
+        .then(resultData => {
+            if (resultData.data) {
+                const stats = resultData.data;
+                const statsHtml = `
+                    <p class="stats">Found <strong>${stats.tracks_count || 0}</strong> tracks 
+                    across <strong>${stats.mixes_count || 0}</strong> mixes</p>
+                `;
+                document.getElementById('downloadStats').innerHTML = statsHtml;
+            }
+        })
+        .catch(error => console.error('Error fetching result data:', error));
         
         // Update download link
         downloadLink.href = `/get_pdf/${jobId}`;

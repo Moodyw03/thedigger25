@@ -10,6 +10,7 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
 # Import the main scraping function
 import main as scraper # Renamed to avoid confusion with main module name
 from dotenv import load_dotenv
@@ -236,6 +237,24 @@ def generate_pdf_background(artist_name):
         if not mixes:
             return {"error": f"No tracklists found for '{artist_name}'"}
         
+        # Performance optimization for very large catalogs
+        if len(mixes) > 100:
+            logger.info(f"Large catalog detected ({len(mixes)} mixes). Limiting to most recent 100 mixes for PDF.")
+            # Sort by date, most recent first (when date is available)
+            mixes_with_date = [mix for mix in mixes if mix.get('date')]
+            mixes_without_date = [mix for mix in mixes if not mix.get('date')]
+            
+            # Sort mixes with dates by date (most recent first)
+            mixes_with_date.sort(key=lambda x: x.get('date', ''), reverse=True)
+            
+            # Take the most recent 90 mixes with dates + 10 without dates if available
+            limited_mixes = mixes_with_date[:90]
+            if mixes_without_date:
+                limited_mixes.extend(mixes_without_date[:min(10, len(mixes_without_date))])
+            
+            logger.info(f"Limited PDF to {len(limited_mixes)} mixes for performance reasons")
+            mixes = limited_mixes
+        
         # Generate the PDF
         pdf_data = generate_pdf(artist_name, mixes)
         
@@ -260,32 +279,51 @@ def generate_pdf(artist_name, mixes):
     styles.add(ParagraphStyle(name='MixTitle', parent=styles['Heading2'], spaceAfter=12))
     styles.add(ParagraphStyle(name='TrackItem', parent=styles['Normal'], leftIndent=20, spaceAfter=3))
     content = []
+    
+    # Create PDF content in batches to improve performance
     title = Paragraph(f"Tracklists for {artist_name}", styles['Title'])
     content.append(title)
     content.append(Spacer(1, 0.25 * inch))
+    
+    # Calculate stats once to avoid repeated calculations
     mixes_with_tracklists = sum(1 for mix in mixes if mix.get("has_tracklist", False))
     total_tracks = sum(len(mix.get("tracks", [])) for mix in mixes)
+    
     summary = Paragraph(f"Found {total_tracks} tracks across {mixes_with_tracklists} mixes with tracklists (total of {len(mixes)} mixes)", styles['Normal'])
     content.append(summary)
     content.append(Spacer(1, 0.25 * inch))
     generated = Paragraph(f"Generated on {datetime.datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}", styles['Italic'])
     content.append(generated)
     content.append(Spacer(1, 0.5 * inch))
+    
+    # Process each mix
     for mix in mixes:
         title_text = mix.get("title", "Untitled Mix")
         if mix.get("date"):
             title_text = f"{mix.get('date')} - {title_text}"
         content.append(Paragraph(title_text, styles['MixTitle']))
+        
         tracks = mix.get("tracks", [])
         if tracks:
+            # Process tracks in chunks for better memory handling
             for i, track in enumerate(tracks):
                 track_text = f"{i + 1}. {track}"
                 content.append(Paragraph(track_text, styles['TrackItem']))
+                
+                # Build the document in chunks if it gets very large
+                if len(content) > 500:  # Build document in chunks of 500 elements
+                    logger.info(f"Building PDF document chunk with {len(content)} elements")
+                    doc.build(content, canvasmaker=NumberedCanvas)
+                    content = []  # Reset content for next chunk
         else:
             content.append(Paragraph("No tracklist available", styles['TrackItem']))
+        
         content.append(Spacer(1, 0.1 * inch))
+    
     try:
-        doc.build(content)
+        # Build final document with any remaining content
+        if content:
+            doc.build(content)
     except Exception as build_error:
         logger.error(f"Error building PDF content: {build_error}")
         raise # Re-raise the error after logging
@@ -293,6 +331,32 @@ def generate_pdf(artist_name, mixes):
     pdf_data = buffer.getvalue()
     buffer.close()
     return pdf_data
+
+# Custom canvas for PDF generation with page numbers
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        canvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        """Add page numbers to each page"""
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages)
+            canvas.Canvas.showPage(self)
+        canvas.Canvas.save(self)
+
+    def draw_page_number(self, page_count):
+        # Add page numbers at the bottom of each page
+        self.setFont("Helvetica", 8)
+        self.drawRightString(
+            letter[0] - 24, 24, f"Page {self._pageNumber} of {page_count}"
+        )
 
 # Original /search route is removed as it's replaced by the job submission logic.
 # Original /api/list might still be useful if you want synchronous access,

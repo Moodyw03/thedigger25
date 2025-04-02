@@ -16,15 +16,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Request configuration
-REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 20))  # Timeout in seconds
+REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 10))  # Reduced from 20 to 10 seconds
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 3))  # Number of retry attempts
-RETRY_DELAY = int(os.environ.get("RETRY_DELAY", 2))  # Seconds between retries
+RETRY_DELAY = int(os.environ.get("RETRY_DELAY", 1))  # Reduced from 2 to 1 second
 # Default maximum number of pages to fetch 
-MAX_FETCH_LIMIT = int(os.environ.get("MAX_FETCH_LIMIT", 300))
+MAX_FETCH_LIMIT = int(os.environ.get("MAX_FETCH_LIMIT", 200))  # Reduced from 300 to 200
 # Default maximum number of pagination pages to fetch
-MAX_PAGINATION_PAGES = int(os.environ.get("MAX_PAGINATION_PAGES", 10))
+MAX_PAGINATION_PAGES = int(os.environ.get("MAX_PAGINATION_PAGES", 5))  # Reduced from 10 to 5
 # Rate limiting - requests per minute
-RATE_LIMIT_RPM = int(os.environ.get("RATE_LIMIT_RPM", 30))
+RATE_LIMIT_RPM = int(os.environ.get("RATE_LIMIT_RPM", 45))  # Increased from 30 to 45
 # Minimum delay between requests in seconds
 MIN_REQUEST_DELAY = 60.0 / RATE_LIMIT_RPM  # Convert RPM to seconds
 
@@ -32,9 +32,9 @@ MIN_REQUEST_DELAY = 60.0 / RATE_LIMIT_RPM  # Convert RPM to seconds
 USER_AGENT = os.environ.get("YOUTUBE_USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 HEADERS = {"User-Agent": USER_AGENT}
 
-# Simple request cache to reduce network calls
+# Simple request cache to reduce network calls - increased cache size
 request_cache = {}
-CACHE_EXPIRY = int(os.environ.get('CACHE_EXPIRY', 86400))  # 24 hours in seconds
+CACHE_EXPIRY = int(os.environ.get('CACHE_EXPIRY', 86400 * 2))  # Increased to 48 hours
 last_request_time = 0  # Track the time of the last request for rate limiting
 
 # Base URL for the Explorer endpoint
@@ -756,17 +756,13 @@ def fetch_mix_tracklist(mix_url):
                     # Skip empty tracks or tracks that are just symbols
                     if not track_name or track_name.strip() in ['?', '-', '–', '—', '•']:
                         continue
-                        
-                    # --- DEBUG LOGGING START ---
-                    logger.info(f"Raw track string before clean: {repr(track_name)}")
-                    track_id = clean_item(track_name)
-                    logger.info(f"Cleaned track string for PDF: {repr(track_id)}") 
-                    # --- DEBUG LOGGING END ---
                     
-                    # Use the cleaned string for the PDF display part of the dictionary
-                    # The 'id' key might be misleading now, maybe rename?
-                    # For now, we assume 'track' holds the display version, 'id' might be unused or needs re-evaluation
-                    tracklist.append({"track": track_id, "id": track_id}) # Using cleaned string for display
+                    # Reduced logging - only log the first few tracks for debugging
+                    if len(tracklist) < 3:  # Only log first 3 tracks
+                        logger.info(f"Sample track string: {repr(track_name)}")
+                    
+                    track_id = clean_item(track_name)
+                    tracklist.append({"track": track_id, "id": track_id})
             
             logger.info(f"Found {len(tracklist)} tracks in tracklist div")
         
@@ -1033,6 +1029,14 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
                 # Count mixes with tracklists
                 mixes_with_tracklists = sum(1 for mix in category_tracklists if mix.get("has_tracklist", False))
                 logger.info(f"{mixes_with_tracklists} mixes have tracklists from Category pages")
+                
+                # Performance optimization: If we already have enough mixes with tracklists, skip the Explorer page
+                if mixes_with_tracklists >= 10:  # A reasonable number of tracklists
+                    logger.info(f"Found {mixes_with_tracklists} mixes with tracklists from Category pages, skipping Explorer page")
+                    all_tracklists.extend(category_tracklists)
+                    elapsed_time = time.time() - start_time
+                    logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
+                    return all_tracklists
                 
                 all_tracklists.extend(category_tracklists)
         except Exception as e:
