@@ -462,13 +462,21 @@ document.addEventListener('DOMContentLoaded', function() {
     function setupPlayAllButton(container) {
         const playAllBtn = container.querySelector('#play-all-btn');
         if (playAllBtn) {
-             playAllBtn.addEventListener('click', startPlayAll);
+             // Attach listener here instead of globally
+             playAllBtn.addEventListener('click', function() {
+                 if (isPlayingAll) {
+                     stopPlayAll();
+                 } else {
+                     startPlayAll();
+                 }
+             });
         }
     }
 
     function setupSkipButton(container) {
          const skipBtn = container.querySelector('#skip-track-btn');
          if(skipBtn) {
+             // Attach listener here instead of globally
             skipBtn.addEventListener('click', skipTrack);
          }
     }
@@ -672,14 +680,6 @@ document.addEventListener('DOMContentLoaded', function() {
          currentTrackIndex = -1;
     }
     
-     document.getElementById('play-all-btn').addEventListener('click', function() {
-        if (isPlayingAll) {
-            stopPlayAll();
-        } else {
-            startPlayAll();
-        }
-    });
-
     function playTrackFromQueue(index) {
         if (index < 0 || index >= trackQueue.length || !isPlayingAll) {
              console.log("Play All finished or stopped.");
