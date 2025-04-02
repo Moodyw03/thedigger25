@@ -757,8 +757,16 @@ def fetch_mix_tracklist(mix_url):
                     if not track_name or track_name.strip() in ['?', '-', '–', '—', '•']:
                         continue
                         
+                    # --- DEBUG LOGGING START ---
+                    logger.info(f"Raw track string before clean: {repr(track_name)}")
                     track_id = clean_item(track_name)
-                    tracklist.append({"track": track_name, "id": track_id})
+                    logger.info(f"Cleaned track string for PDF: {repr(track_id)}") 
+                    # --- DEBUG LOGGING END ---
+                    
+                    # Use the cleaned string for the PDF display part of the dictionary
+                    # The 'id' key might be misleading now, maybe rename?
+                    # For now, we assume 'track' holds the display version, 'id' might be unused or needs re-evaluation
+                    tracklist.append({"track": track_id, "id": track_id}) # Using cleaned string for display
             
             logger.info(f"Found {len(tracklist)} tracks in tracklist div")
         
