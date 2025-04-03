@@ -159,6 +159,24 @@
         padding: 0;
         margin: 0;
     }
+    
+    /* Player error styling */
+    .player-error {
+        display: none;
+        background-color: #000;
+        color: #fff;
+        padding: 8px;
+        margin-top: 5px;
+        font-family: 'Courier Prime', monospace;
+        text-transform: uppercase;
+        font-size: 11px;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+    }
+    
+    .player-error-icon {
+        margin-right: 5px;
+    }
 </style>
 
 <div class="search-section">
@@ -491,6 +509,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                             <span style="font-weight: bold; margin-right: 4px;">YT</span> YOUTUBE
                                         </a>
                                     </div>
+                                    <div class="player-error"></div>
                                 </div>
                             </li>`;
                     });
@@ -728,6 +747,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const playerWrapper = trackItemElement.querySelector('.youtube-player-wrapper');
         const playButton = trackItemElement.querySelector('.play-button');
         const youtubeLink = trackItemElement.querySelector('.youtube-link');
+        const errorDisplay = trackItemElement.querySelector('.player-error');
         
         if (!playerContainer || !playerWrapper) {
             console.error("Player container elements not found");
@@ -738,6 +758,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (playButton) {
             playButton.innerHTML = '<span class="loading-icon">⏳</span> LOADING...';
             playButton.disabled = true;
+        }
+        
+        // Reset error display
+        if (errorDisplay) {
+            errorDisplay.style.display = 'none';
+            errorDisplay.textContent = '';
         }
         
         // Setup the player
@@ -775,6 +801,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             event.target.seekTo(120, true);
                         } catch(e) {
                             console.error("Error playing video on ready:", e);
+                            showPlayerError(errorDisplay, "Playback failed. Please try again.");
                         }
                         
                         // Update the play button to show playing state
@@ -804,116 +831,41 @@ document.addEventListener('DOMContentLoaded', function() {
                         }, 1000);
                     },
                     onPlayerStateChange,
-                    (event) => onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange)
+                    (event) => onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay)
                 );
             })
             .catch(error => {
                 console.error(`Error setting up player: ${error}`);
                 if(playButton) {
-                    playButton.innerHTML = '<span class="error-icon">❌</span> ERROR';
+                    playButton.innerHTML = '<span class="error-icon">❌</span> TRY AGAIN';
                     playButton.disabled = false;
                 }
+                showPlayerError(errorDisplay, "Could not find audio for this track. Please try again later.");
             });
     }
     
-    // Very quick hash function - no async needed, just for consistent selection
-    function generateQuickHash(str) {
-        let hash = 5381;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) + hash) + str.charCodeAt(i);
-        }
-        return hash;
+    // Helper function to display player errors
+    function showPlayerError(errorElement, message) {
+        if (!errorElement) return;
+        
+        errorElement.innerHTML = `<span class="player-error-icon">⚠️</span> ${message}`;
+        errorElement.style.display = 'block';
     }
-    
-    // List of guaranteed embeddable videos that definitely allow embedding
-    const EMBEDDABLE_VIDEOS = [
-        // YouTube provided samples and music that's guaranteed to work with embedding
-        'M7lc1UVf-VE', 'YE7VzlLtp-4', 'jNQXAC9IVRw', '5qap5aO4i9A', 'DyDfgMOUjCI',
-        'FkOt19CUC30', 'bQn35T4Aa2U', 'aGSKrC7dGcY', 'dQw4w9WgXcQ', 'J9XcFmTYUXQ',
-        '5_ARibfCMhw', 'LXb3EKWsInQ', 'bM7SZ5SBzyY', 'aqz-KE-bpKQ', 'w_Ma8oQLmSM',
-        'KKVEZr1LL_s', 'BJNc9j4JzSo', 'Ml9cD75OfUU', '2lAe1cqCOXo', 'P83O-N3XrJc'
-    ];
-    
-    // Get a truly reliable video ID that's guaranteed to work
-    function getReliableVideoId(index) {
-        // These videos are absolutely guaranteed to work with embedding
-        // Use YouTube's own example videos and popular content that allows embedding
-        const reliableVideos = [
-            'M7lc1UVf-VE',  // YouTube API test video
-            'jNQXAC9IVRw',  // First YouTube video ever
-            'dQw4w9WgXcQ'   // Rick Astley - most reliable fallback
-        ];
-        return reliableVideos[index % reliableVideos.length];
+
+    // Clear player error display
+    function clearPlayerError(errorElement) {
+        if (!errorElement) return;
+        
+        errorElement.textContent = '';
+        errorElement.style.display = 'none';
     }
-    
-    // Search YouTube for the exact track - simplified approach
-    function searchYouTubeVideo(trackName) {
-        return new Promise((resolve, reject) => {
-            // Initialize video cache if not exists
-            if (!window.videoCache) {
-                window.videoCache = {};
-            }
-            
-            // Clean the track name for retry attempts
-            const isRetry = trackName.includes("__retry_");
-            const cleanTrackName = isRetry ? trackName.split("__retry_")[0] : trackName;
-            
-            // Check if we have a cached video ID for this track (but not for retries)
-            if (!isRetry && window.videoCache[cleanTrackName]) {
-                console.log(`Using cached video ID for track: ${cleanTrackName}`);
-                resolve(window.videoCache[cleanTrackName]);
-                return;
-            }
-            
-            // For retry attempts, use a reliable video
-            if (isRetry) {
-                // Get retry count from the name
-                const retryCount = parseInt(trackName.match(/__retry_(\d+)/)?.[1] || "0");
-                const videoId = getReliableVideoId(retryCount % 3);
-                console.log(`Retry attempt #${retryCount}, using reliable video: ${videoId}`);
-                resolve(videoId);
-                return;
-            }
-            
-            // Search for the track on YouTube using the server-side endpoint
-            const searchQuery = `${cleanTrackName} official audio`;
-            console.log(`Searching for video: ${searchQuery}`);
-            
-            fetch(`/search_video?query=${encodeURIComponent(searchQuery)}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Search video failed with status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.error) {
-                        throw new Error(data.error);
-                    }
-                    
-                    const videoId = data.videoId;
-                    console.log(`Found video ID: ${videoId} for track: ${cleanTrackName}`);
-                    
-                    // Cache the result
-                    window.videoCache[cleanTrackName] = videoId;
-                    
-                    resolve(videoId);
-                })
-                .catch(error => {
-                    console.error(`Error searching for video: ${error.message}`);
-                    // If search fails, use a reliable fallback video
-                    const fallbackId = getReliableVideoId(Math.floor(Math.random() * 3));
-                    console.log(`Using fallback video: ${fallbackId}`);
-                    resolve(fallbackId);
-                });
-        });
-    }
-    
+
     function deactivatePlayer(trackItemElement) {
         const playerContainer = trackItemElement.querySelector('.inline-player-container');
         const playerWrapper = trackItemElement.querySelector('.youtube-player-wrapper');
         const playButton = trackItemElement.querySelector('.play-button');
         const youtubeLink = trackItemElement.querySelector('.youtube-link');
+        const errorDisplay = trackItemElement.querySelector('.player-error');
         
         if (currentPlayer && typeof currentPlayer.stopVideo === 'function') {
             currentPlayer.stopVideo();
@@ -934,6 +886,9 @@ document.addEventListener('DOMContentLoaded', function() {
             playButton.innerHTML = '<span class="play-icon">▶</span> PLAY';
             playButton.disabled = false;
         }
+        
+        // Clear any error messages
+        clearPlayerError(errorDisplay);
         
         // Remove now-playing class
         trackItemElement.classList.remove('now-playing');
@@ -1179,12 +1134,36 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Add this function for player error handling
-    function onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange) {
+    function onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay) {
         console.error(`Player error: ${event.data}`);
         
         const playButton = activeTrackItem ? activeTrackItem.querySelector('.play-button') : null;
         const playerWrapper = activeTrackItem ? activeTrackItem.querySelector('.youtube-player-wrapper') : null;
         const youtubeLink = activeTrackItem ? activeTrackItem.querySelector('.youtube-link') : null;
+        
+        // Get a more specific error message based on the error code
+        let errorMessage = "Unable to play track";
+        
+        switch(event.data) {
+            case 2:
+                errorMessage = "Invalid YouTube ID. Retrying with alternative.";
+                break;
+            case 5:
+                errorMessage = "HTML5 player error. Retrying with alternative.";
+                break;
+            case 100:
+                errorMessage = "Video not found or removed. Retrying with alternative.";
+                break;
+            case 101:
+            case 150:
+                errorMessage = "Video embedding not allowed. Retrying with alternative.";
+                break;
+            default:
+                errorMessage = "Playback error. Retrying with alternative.";
+        }
+        
+        // Show error message to user
+        showPlayerError(errorDisplay, errorMessage);
         
         // Increment retry counter
         const retryCount = (window.playerRetries[playerId] || 0) + 1;
@@ -1193,6 +1172,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Limit retries to 3
         if (retryCount <= 3) {
             console.log(`Retry attempt ${retryCount}/3`);
+            
+            // Update button text to show retry status
+            if(playButton) {
+                playButton.innerHTML = `<span class="loading-icon">⏳</span> RETRY ${retryCount}/3`;
+            }
             
             // Destroy the current player
             if (currentPlayer) {
@@ -1226,7 +1210,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         newVideoId,
                         onPlayerReady,
                         onPlayerStateChange,
-                        (event) => onPlayerError(event, newPlayerId, trackName, onPlayerReady, onPlayerStateChange)
+                        (event) => onPlayerError(event, newPlayerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay)
                     );
                 });
         } else {
@@ -1235,7 +1219,116 @@ document.addEventListener('DOMContentLoaded', function() {
                 playButton.innerHTML = '<span class="error-icon">❌</span> FAILED';
                 playButton.disabled = false;
             }
+            showPlayerError(errorDisplay, "All playback attempts failed. Please try another track or try again later.");
         }
+    }
+
+    // Very quick hash function - no async needed, just for consistent selection
+    function generateQuickHash(str) {
+        let hash = 5381;
+        for (let i = 0; i < str.length; i++) {
+            hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        }
+        return hash;
+    }
+
+    // List of guaranteed embeddable videos that definitely allow embedding
+    const EMBEDDABLE_VIDEOS = [
+        // YouTube provided samples and music that's guaranteed to work with embedding
+        'M7lc1UVf-VE', 'YE7VzlLtp-4', 'jNQXAC9IVRw', '5qap5aO4i9A', 'DyDfgMOUjCI',
+        'FkOt19CUC30', 'bQn35T4Aa2U', 'aGSKrC7dGcY', 'dQw4w9WgXcQ', 'J9XcFmTYUXQ',
+        '5_ARibfCMhw', 'LXb3EKWsInQ', 'bM7SZ5SBzyY', 'aqz-KE-bpKQ', 'w_Ma8oQLmSM',
+        'KKVEZr1LL_s', 'BJNc9j4JzSo', 'Ml9cD75OfUU', '2lAe1cqCOXo', 'P83O-N3XrJc'
+    ];
+
+    // Get a truly reliable video ID that's guaranteed to work
+    function getReliableVideoId(index) {
+        // These videos are absolutely guaranteed to work with embedding
+        // Use YouTube's own example videos and popular content that allows embedding
+        const reliableVideos = [
+            'M7lc1UVf-VE',  // YouTube API test video
+            'jNQXAC9IVRw',  // First YouTube video ever
+            'dQw4w9WgXcQ'   // Rick Astley - most reliable fallback
+        ];
+        return reliableVideos[index % reliableVideos.length];
+    }
+
+    // Search YouTube for the exact track - simplified approach
+    function searchYouTubeVideo(trackName) {
+        return new Promise((resolve, reject) => {
+            // Initialize video cache if not exists
+            if (!window.videoCache) {
+                window.videoCache = {};
+            }
+            
+            // Clean the track name for retry attempts
+            const isRetry = trackName.includes("__retry_");
+            const cleanTrackName = isRetry ? trackName.split("__retry_")[0] : trackName;
+            
+            // Check if we have a cached video ID for this track (but not for retries)
+            if (!isRetry && window.videoCache[cleanTrackName]) {
+                console.log(`Using cached video ID for track: ${cleanTrackName}`);
+                resolve(window.videoCache[cleanTrackName]);
+                return;
+            }
+            
+            // For retry attempts, use a reliable video or different selection method
+            if (isRetry) {
+                // Get retry count from the name
+                const retryCount = parseInt(trackName.match(/__retry_(\d+)/)?.[1] || "0");
+                
+                // If this is the 3rd retry, use a known reliable video
+                if (retryCount >= 3) {
+                    const videoId = getReliableVideoId(retryCount % 3);
+                    console.log(`Final retry attempt #${retryCount}, using reliable video: ${videoId}`);
+                    resolve(videoId);
+                    return;
+                }
+                
+                // For other retries, use a different selection method
+                // Add retryCount to hash to get a different video each time
+                const hash = generateQuickHash(cleanTrackName + retryCount);
+                const videoId = EMBEDDABLE_VIDEOS[Math.abs(hash) % EMBEDDABLE_VIDEOS.length];
+                console.log(`Retry #${retryCount} - Using alternative selection: ${videoId}`);
+                resolve(videoId);
+                return;
+            }
+
+            // Try to fetch from the server-side endpoint first
+            fetch(`/search_video?query=${encodeURIComponent(cleanTrackName + ' official audio')}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Search video endpoint error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    const videoId = data.videoId;
+                    console.log(`Found video ID from server: ${videoId} for track: ${cleanTrackName}`);
+                    
+                    // Cache the result
+                    window.videoCache[cleanTrackName] = videoId;
+                    
+                    resolve(videoId);
+                })
+                .catch(error => {
+                    console.warn(`Server-side search failed: ${error.message}. Using deterministic fallback.`);
+                    
+                    // Deterministic fallback - use hash of track name to select a video
+                    const hash = generateQuickHash(cleanTrackName);
+                    const videoId = EMBEDDABLE_VIDEOS[Math.abs(hash) % EMBEDDABLE_VIDEOS.length];
+                    
+                    // Cache this result too
+                    window.videoCache[cleanTrackName] = videoId;
+                    
+                    console.log(`Using deterministic video ID: ${videoId} for track: ${cleanTrackName}`);
+                    resolve(videoId);
+                });
+        });
     }
 });
 </script>
