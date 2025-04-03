@@ -594,7 +594,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentTrackIndex = -1;
     let isPlayingAll = false;
     let switchTrackTimeout = null;
-    const TRACK_PLAY_DURATION = 120000; // 2 minutes
+    const TRACK_PLAY_DURATION = 120000; // 2 minutes in milliseconds
 
     window.onYouTubeIframeAPIReady = function() {
         youtubeReady = true;
@@ -771,6 +771,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         console.log("Player ready, playing video");
                         try {
                             event.target.playVideo();
+                            // Ensure video starts at 2 minutes
+                            event.target.seekTo(120, true);
                         } catch(e) {
                             console.error("Error playing video on ready:", e);
                         }
@@ -962,7 +964,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     'controls': 0,
                     'fs': 0,
                     'playsinline': 1,
-                    'enablejsapi': 1
+                    'enablejsapi': 1,
+                    'start': 120 // Start at 2 minutes (120 seconds)
                 },
                 events: {
                     'onReady': function(event) {
@@ -971,6 +974,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         // Try to play the video immediately
                         try {
                             event.target.playVideo();
+                            // Make sure it's at the 2 minute mark (in case start param doesn't work)
+                            event.target.seekTo(120, true);
                         } catch(e) {
                             console.error('Error playing video:', e);
                         }
@@ -1050,16 +1055,27 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function stopPlayAll() {
-         console.log("Stopping Play All");
+        console.log("Stopping Play All");
         isPlayingAll = false;
-         if (currentPlayer && typeof currentPlayer.stopVideo === 'function') {
+        
+        // Clear the track timer
+        if (switchTrackTimeout) {
+            clearTimeout(switchTrackTimeout);
+            switchTrackTimeout = null;
+        }
+        
+        // Stop the current player if active
+        if (currentPlayer && activeTrackItem) {
             deactivatePlayer(activeTrackItem);
-         }
-         if (switchTrackTimeout) clearTimeout(switchTrackTimeout);
-         document.getElementById('skip-track-btn').disabled = true;
-         document.getElementById('play-all-btn').textContent = 'Play All Tracks';
-         trackQueue = [];
-         currentTrackIndex = -1;
+        }
+        
+        // Reset UI and variables
+        document.getElementById('skip-track-btn').disabled = true;
+        document.getElementById('play-all-btn').textContent = 'Play All Tracks';
+        
+        // Clear the track queue
+        trackQueue = [];
+        currentTrackIndex = -1;
     }
     
     function playTrackFromQueue(index) {
@@ -1070,13 +1086,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const item = trackQueue[index];
         console.log(`Play All: Playing track ${index + 1}/${trackQueue.length}: ${item.trackName}`);
+        
+        // Clear any existing timeout first
+        if (switchTrackTimeout) {
+            clearTimeout(switchTrackTimeout);
+            switchTrackTimeout = null;
+        }
+        
+        // Play the track - the timer will be set in onPlayerStateChange when the track starts playing
         playTrack(item.trackItem);
         
-        // Set timeout to automatically skip to the next track after TRACK_PLAY_DURATION
-        // Clear any existing timeout first
-        if (switchTrackTimeout) clearTimeout(switchTrackTimeout);
+        // Set a backup timeout in case onPlayerStateChange doesn't fire
+        console.log(`Play All: Setting 2-minute timer for track ${index + 1}`);
         switchTrackTimeout = setTimeout(() => {
-            console.log(`Play All: Time limit reached for track ${index + 1}, skipping...`);
+            console.log(`Play All: 2-minute time limit reached for track ${index + 1}, skipping...`);
             skipTrack();
         }, TRACK_PLAY_DURATION);
     }
@@ -1126,10 +1149,32 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if(event.data === YT.PlayerState.PAUSED) {
             playButton.innerHTML = '<span class="play-icon">▶</span> RESUME';
+            
+            // If we're in Play All mode, we don't want to pause the timer
+            // This allows users to pause a track without affecting the 2-minute limit
+            
         } else if(event.data === YT.PlayerState.PLAYING) {
             playButton.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
+            
+            // If we're in Play All mode and this is a new track starting
+            if (isPlayingAll && activeTrackItem) {
+                // Reset the timer to ensure exactly 2 minutes per track
+                if (switchTrackTimeout) clearTimeout(switchTrackTimeout);
+                switchTrackTimeout = setTimeout(() => {
+                    console.log(`Play All: Time limit reached, skipping to next track after 2 minutes`);
+                    skipTrack();
+                }, TRACK_PLAY_DURATION);
+            }
+            
         } else if(event.data === YT.PlayerState.ENDED) {
             playButton.innerHTML = '<span class="replay-icon">🔄</span> REPLAY';
+            
+            // If a track ends naturally before 2 minutes and we're in Play All mode, skip to next
+            if (isPlayingAll) {
+                if (switchTrackTimeout) clearTimeout(switchTrackTimeout);
+                console.log('Play All: Track ended naturally, skipping to next track');
+                skipTrack();
+            }
         }
     }
 
