@@ -14,6 +14,7 @@ from reportlab.pdfgen import canvas
 # Import the main scraping function
 import main as scraper # Renamed to avoid confusion with main module name
 from dotenv import load_dotenv
+from track_formatter import format_track_for_pdf
 
 # RQ imports
 from redis import from_url as redis_from_url
@@ -140,7 +141,19 @@ def get_job_result(job_id):
         return jsonify({"error": f"Job failed: {error_message}", "status": job.get_status()}), 500
 
     # Return the actual result from the job
-    return jsonify({"status": "finished", "data": job.result})
+    # For PDF jobs, exclude binary data from JSON response
+    if isinstance(job.result, dict) and "pdf_data" in job.result:
+        # Create a copy without the binary data
+        result_data = {k: v for k, v in job.result.items() if k != "pdf_data"}
+        return jsonify({
+            "status": "finished", 
+            "data": result_data,
+            "has_pdf": True,
+            "pdf_url": f"/get_pdf/{job_id}"
+        })
+    else:
+        # For non-PDF jobs, return the full result
+        return jsonify({"status": "finished", "data": job.result})
 
 # --- PDF Generation Background Job Routes ---
 @app.route("/start_pdf_job", methods=['POST'])
@@ -338,7 +351,7 @@ def generate_pdf(artist_name, mixes, job=None):
         if tracks:
             # Process tracks in chunks for better memory handling
             for i, track in enumerate(tracks):
-                track_text = f"{i + 1}. {track}"
+                track_text = f"{i + 1}. {format_track_for_pdf(track)}"
                 content.append(Paragraph(track_text, styles['TrackItem']))
                 
                 # Build the document in chunks if it gets very large
