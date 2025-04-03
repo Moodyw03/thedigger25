@@ -7,9 +7,21 @@
     /* Track styling */
     .track-item {
         padding: 10px;
-        border-bottom: 1px solid #eee;
+        border-bottom: 1px solid #000;
         display: flex;
         flex-direction: column; /* Changed to column to place player below track info */
+    }
+    
+    .track-item.now-playing .track-item-content {
+        background-color: #000;
+        margin: -10px;
+        margin-bottom: 0;
+        padding: 10px;
+    }
+    
+    .track-item.now-playing .track-name,
+    .track-item.now-playing .track-number {
+        color: #fff;
     }
     
     .track-item-content {
@@ -21,6 +33,7 @@
     
     .track-info {
         flex-grow: 1;
+        font-family: 'Courier Prime', monospace;
     }
     
     .track-name {
@@ -34,14 +47,14 @@
     /* Player styling */
     .inline-player-container {
         margin-top: 10px;
-        margin-left: 20px; /* Indent player under track */
-        margin-right: 20px;
+        margin-left: 0; /* Remove indent for brutalist style */
+        margin-right: 0;
         display: none;
-        padding: 8px;
-        background-color: #f8f8f8;
-        border-radius: 4px;
-        border: 1px solid #ddd;
-        width: calc(100% - 40px); /* Account for margins */
+        padding: 10px;
+        background-color: #fff;
+        border: 2px solid #000;
+        border-top: none;
+        width: calc(100% - 0px); /* Full width for brutalist style */
     }
     
     .youtube-player-wrapper {
@@ -55,32 +68,46 @@
         align-items: center;
         justify-content: space-between;
         font-size: 0.9em;
-        height: 22px; /* Fixed height to prevent layout shifts */
+        height: 26px; /* Fixed height to prevent layout shifts */
         padding: 3px 0;
     }
     
     .time-display {
-        font-family: monospace;
+        font-family: 'Courier Prime', monospace;
         min-width: 90px;
         display: inline-block;
         font-size: 12px;
-        color: #333;
+        color: #000;
+        font-weight: bold;
         margin-right: 10px;
     }
     
     /* Play button styling */
     .play-button {
-        background-color: #333;
+        background-color: #000;
         color: #fff;
         border: none;
-        border-radius: 3px;
-        padding: 4px 8px;
+        border-radius: 0;
+        padding: 5px 10px;
         cursor: pointer;
         font-size: 12px;
+        font-family: 'Courier Prime', monospace;
+        text-transform: uppercase;
+        font-weight: bold;
+        letter-spacing: 0.5px;
     }
     
     .play-button:hover {
-        background-color: #555;
+        background-color: #333;
+    }
+    
+    .now-playing .play-button {
+        background-color: #fff;
+        color: #000;
+    }
+    
+    .now-playing .play-button:hover {
+        background-color: #ddd;
     }
     
     .play-icon {
@@ -89,36 +116,41 @@
     
     /* YouTube link styling */
     .youtube-link {
-        color: #333;
+        color: #fff;
         text-decoration: none;
-        font-size: 12px;
+        font-size: 11px;
         display: inline-flex;
         align-items: center;
-        border: 1px solid #ccc;
-        padding: 1px 6px;
-        border-radius: 3px;
-        background-color: #f1f1f1;
+        border: none;
+        padding: 4px 8px;
+        background-color: #000;
+        font-family: 'Courier Prime', monospace;
+        text-transform: uppercase;
+        font-weight: bold;
+        letter-spacing: 0.5px;
     }
     
     .youtube-link:hover {
-        background-color: #e5e5e5;
+        background-color: #333;
         text-decoration: none;
     }
     
     .youtube-icon {
         margin-right: 4px;
-        color: #ff0000;
+        color: #fff;
     }
     
     /* Playing state */
     .playing-indicator {
         display: inline-block;
         padding: 2px 6px;
-        background-color: #333;
+        background-color: #000;
         color: white;
-        border-radius: 3px;
+        border-radius: 0;
         font-size: 11px;
         margin-right: 8px;
+        font-family: 'Courier Prime', monospace;
+        text-transform: uppercase;
     }
     
     /* Track list */
@@ -454,7 +486,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </div>
                                     <div class="track-actions">
                                         <button class="play-button" data-track="${encodedTrack}">
-                                            <span class="play-icon">▶</span> Play
+                                            <span class="play-icon">▶</span> PLAY
                                         </button>
                                     </div>
                                 </div>
@@ -463,10 +495,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <div class="audio-controls">
                                         <div class="time-display">0:00 / 0:00</div>
                                         <a href="#" class="youtube-link" target="_blank">
-                                            <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align: middle;">
-                                                <path d="M10,15L15.19,12L10,9V15M21.56,7.17C21.69,7.64 21.78,8.27 21.84,9.07C21.91,9.87 21.94,10.56 21.94,11.16L22,12C22,14.19 21.84,15.8 21.56,16.83C21.31,17.73 20.73,18.31 19.83,18.56C19.36,18.69 18.5,18.78 17.18,18.84C15.88,18.91 14.69,18.94 13.59,18.94L12,19C7.81,19 5.2,18.84 4.17,18.56C3.27,18.31 2.69,17.73 2.44,16.83C2.31,16.36 2.22,15.73 2.16,14.93C2.09,14.13 2.06,13.44 2.06,12.84L2,12C2,9.81 2.16,8.2 2.44,7.17C2.69,6.27 3.27,5.69 4.17,5.44C4.64,5.31 5.5,5.22 6.82,5.16C8.12,5.09 9.31,5.06 10.41,5.06L12,5C16.19,5 18.8,5.16 19.83,5.44C20.73,5.69 21.31,6.27 21.56,7.17Z" fill="#ff0000"/>
-                                            </svg>
-                                            YouTube
+                                            <span style="font-weight: bold; margin-right: 4px;">YT</span> YOUTUBE
                                         </a>
                                     </div>
                                 </div>
@@ -711,7 +740,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Disable play button during loading
         if (playButton) {
-            playButton.innerHTML = '<span class="loading-icon">⏳</span> Loading...';
+            playButton.innerHTML = '<span class="loading-icon">⏳</span> LOADING...';
             playButton.disabled = true;
         }
         
@@ -753,8 +782,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         // Update the play button to show playing state
                         if(playButton) {
-                            playButton.innerHTML = '<span class="pause-icon">⏸</span> Playing';
+                            playButton.innerHTML = '<span class="pause-icon">⏸</span> PLAYING';
                             playButton.disabled = false;
+                            
+                            // Add now-playing class to track item for styling
+                            trackItemElement.classList.add('now-playing');
                         }
                         
                         // Start the timer update
@@ -778,11 +810,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     function onPlayerStateChange(event) {
                         // Update UI based on player state
                         if(event.data === YT.PlayerState.PAUSED) {
-                            if(playButton) playButton.innerHTML = '<span class="play-icon">▶</span> Resume';
+                            if(playButton) playButton.innerHTML = '<span class="play-icon">▶</span> RESUME';
                         } else if(event.data === YT.PlayerState.PLAYING) {
-                            if(playButton) playButton.innerHTML = '<span class="pause-icon">⏸</span> Pause';
+                            if(playButton) playButton.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
                         } else if(event.data === YT.PlayerState.ENDED) {
-                            if(playButton) playButton.innerHTML = '<span class="replay-icon">🔄</span> Replay';
+                            if(playButton) playButton.innerHTML = '<span class="replay-icon">🔄</span> REPLAY';
                         }
                     },
                     // On player error
@@ -833,7 +865,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         } else {
                             console.error("Max retry attempts reached");
                             if(playButton) {
-                                playButton.innerHTML = '<span class="error-icon">❌</span> Failed to play';
+                                playButton.innerHTML = '<span class="error-icon">❌</span> FAILED';
                                 playButton.disabled = false;
                             }
                         }
@@ -843,7 +875,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(error => {
                 console.error(`Error setting up player: ${error}`);
                 if(playButton) {
-                    playButton.innerHTML = '<span class="error-icon">❌</span> Error';
+                    playButton.innerHTML = '<span class="error-icon">❌</span> ERROR';
                     playButton.disabled = false;
                 }
             });
@@ -964,9 +996,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         if (playButton) {
-            playButton.innerHTML = '<span class="play-icon">▶</span> Play';
+            playButton.innerHTML = '<span class="play-icon">▶</span> PLAY';
             playButton.disabled = false;
         }
+        
+        // Remove now-playing class
+        trackItemElement.classList.remove('now-playing');
         
         if (updateTimeInterval) {
             clearInterval(updateTimeInterval);
