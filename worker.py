@@ -18,11 +18,13 @@ redis_conn = Redis.from_url(
     health_check_interval=30    # Check health periodically
 )
 
-queue = Queue(connection=redis_conn)
+# Create queue with a default timeout of 30 minutes for all jobs
+queue = Queue(connection=redis_conn, default_timeout=1800)  # 30 minutes max for a job
+
+# Create worker without the job_timeout parameter
 worker = SimpleWorker(
     [queue], 
-    connection=redis_conn,
-    job_timeout=1800  # 30 minutes max for a job
+    connection=redis_conn
 )
 print("Worker starting...")
 worker.work()
