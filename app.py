@@ -503,87 +503,61 @@ def direct_pdf_download():
 
 @app.route("/search_video")
 def search_video():
-    """Search for a video on YouTube and return the video ID."""
+    """Search for a YouTube video and return the video ID."""
     query = request.args.get("query", "")
     
     if not query:
-        return jsonify({"error": "Query parameter is required"}), 400
+        return jsonify({"error": "Search query is required"}), 400
+    
+    # Check cache first
+    cache_key = query.lower()
+    current_time = time.time()
+    
+    if cache_key in video_id_cache:
+        cached_item = video_id_cache[cache_key]
+        # If the cache hasn't expired
+        if current_time - cached_item["timestamp"] < CACHE_EXPIRY:
+            logger.info(f"Cache hit for query: {query}")
+            return jsonify({"videoId": cached_item["video_id"]})
     
     try:
-        # Check if we have this query cached already
-        if query in video_id_cache:
-            logger.info(f"Using cached video ID for query: {query}")
-            return jsonify({"videoId": video_id_cache[query]})
-        
-        # We'll use a simple approach to extract video ID from YouTube search results
-        # This doesn't require an API key but is a bit of a hack
-        search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
         logger.info(f"Searching YouTube for: {query}")
         
-        # Use the retry logic from main.py here
-        response = scraper.fetch_with_retry(search_url)
+        # Format query for YouTube search
+        search_query = urllib.parse.quote(query)
         
-        # Extract video ID from the response
-        # This is a simple approach that may break if YouTube changes their page structure
-        html = response.text
-        logger.info(f"Received HTML response of length: {len(html)}")
+        # Make request to YouTube search
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(
+            f"https://www.youtube.com/results?search_query={search_query}",
+            headers=headers
+        )
         
-        # Look for videoId in the response
-        video_id = None
+        if response.status_code != 200:
+            return jsonify({"error": f"YouTube search failed with status code: {response.status_code}"}), 500
         
-        # Try multiple patterns to find video ID
-        patterns = [
-            '"videoId":"', 
-            'watch?v=',
-            '/embed/',
-            '/v/'
-        ]
+        # Extract video ID using regex
+        video_ids = re.findall(r"watch\?v=(\S{11})", response.text)
         
-        for pattern in patterns:
-            start_idx = html.find(pattern)
-            if start_idx != -1:
-                start_idx += len(pattern)
-                
-                # Determine end of video ID based on which pattern was found
-                if pattern == '"videoId":"':
-                    end_idx = html.find('"', start_idx)
-                else:
-                    # For URL patterns, look for ending delimiters
-                    end_idx = next((html.find(c, start_idx) for c in ['"', '&', '#', '?', ' '] 
-                                   if html.find(c, start_idx) != -1), len(html))
-                
-                if end_idx != -1:
-                    video_id = html[start_idx:end_idx]
-                    logger.info(f"Found video ID using pattern '{pattern}': {video_id}")
-                    break
+        if not video_ids:
+            return jsonify({"error": "No videos found"}), 404
         
-        if not video_id:
-            # Try one more approach - look for any watch?v= format
-            match = re.search(r'watch\?v=([a-zA-Z0-9_-]{11})', html)
-            if match:
-                video_id = match.group(1)
-                logger.info(f"Found video ID using regex: {video_id}")
+        # Get the first video ID
+        video_id = video_ids[0]
         
-        if not video_id:
-            logger.warning(f"No video ID found for query: {query}")
-            return jsonify({"error": "No video found"}), 404
-            
-        # Basic validation - YouTube IDs are usually 11 characters
-        if len(video_id) != 11:
-            logger.warning(f"Found invalid video ID (length != 11): {video_id}")
-            # Try to extract just the 11 character ID if we found something longer
-            if len(video_id) > 11:
-                video_id = video_id[:11]
-                logger.info(f"Truncated to 11 characters: {video_id}")
-        
-        # Cache the result
-        video_id_cache[query] = video_id
+        # Save to cache
+        video_id_cache[cache_key] = {
+            "video_id": video_id,
+            "timestamp": current_time
+        }
         
         return jsonify({"videoId": video_id})
     
     except Exception as e:
-        logger.error(f"Error searching for video: {str(e)}")
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        logger.error(f"Error searching YouTube: {str(e)}")
+        return jsonify({"error": f"An error occurred while searching YouTube: {str(e)}"}), 500
 
 # Main entry point for development server (not used by Gunicorn)
 if __name__ == "__main__":

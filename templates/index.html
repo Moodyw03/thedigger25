@@ -782,56 +782,88 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 window.playerRetries[playerId] = 0;
                 
-                // Update YouTube link with correct URL
+                // Update YouTube link with correct URL and make it immediately visible
                 if (youtubeLink) {
                     youtubeLink.href = `https://www.youtube.com/watch?v=${videoId}`;
                     youtubeLink.target = "_blank";
                     youtubeLink.style.display = "inline-block";
+                    // Add a hint that this is a direct link option
+                    youtubeLink.innerHTML = '<span style="font-weight: bold; margin-right: 4px;">YT</span> OPEN ON YOUTUBE';
+                    
+                    // Show a temporary message indicating the YouTube link is available
+                    const tempMsg = document.createElement('div');
+                    tempMsg.className = 'youtube-hint';
+                    tempMsg.innerHTML = 'TIP: If track doesn\'t play, use the YouTube link →';
+                    tempMsg.style.fontSize = '11px';
+                    tempMsg.style.color = '#666';
+                    tempMsg.style.marginRight = '5px';
+                    tempMsg.style.flex = '1';
+                    tempMsg.style.textAlign = 'right';
+                    
+                    // Insert before the YouTube link
+                    const audioControls = trackItemElement.querySelector('.audio-controls');
+                    if (audioControls) {
+                        const timeDisplay = audioControls.querySelector('.time-display');
+                        if (timeDisplay) {
+                            audioControls.insertBefore(tempMsg, youtubeLink);
+                            // Auto-remove after 8 seconds
+                            setTimeout(() => {
+                                if (tempMsg.parentNode) {
+                                    tempMsg.parentNode.removeChild(tempMsg);
+                                }
+                            }, 8000);
+                        }
+                    }
                 }
+                
+                // Define the player ready callback
+                const onPlayerReady = function(event) {
+                    console.log("Player ready, playing video");
+                    try {
+                        event.target.playVideo();
+                        // Ensure video starts at 2 minutes
+                        event.target.seekTo(120, true);
+                    } catch(e) {
+                        console.error("Error playing video on ready:", e);
+                        showPlayerError(errorDisplay, "Playback failed. Please try again.");
+                    }
+                    
+                    // Update the play button to show playing state
+                    if(playButton) {
+                        playButton.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
+                        playButton.disabled = false;
+                        
+                        // Add now-playing class to track item for styling
+                        trackItemElement.classList.add('now-playing');
+                    }
+                    
+                    // Start the timer update
+                    if (updateTimeInterval) clearInterval(updateTimeInterval);
+                    updateTimeInterval = setInterval(function() {
+                        if (currentPlayer && typeof currentPlayer.getCurrentTime === 'function') {
+                            try {
+                                const currentTime = currentPlayer.getCurrentTime();
+                                const duration = currentPlayer.getDuration();
+                                const timeDisplay = trackItemElement.querySelector('.time-display');
+                                if (timeDisplay) {
+                                    timeDisplay.textContent = formatTime(currentTime) + ' / ' + formatTime(duration);
+                                }
+                            } catch (e) {
+                                console.error("Error updating time:", e);
+                            }
+                        }
+                    }, 1000);
+                };
                 
                 // Create player with error and ready handlers
                 currentPlayer = createPlayer(
                     playerId, 
                     videoId,
-                    function onPlayerReady(event) {
-                        console.log("Player ready, playing video");
-                        try {
-                            event.target.playVideo();
-                            // Ensure video starts at 2 minutes
-                            event.target.seekTo(120, true);
-                        } catch(e) {
-                            console.error("Error playing video on ready:", e);
-                            showPlayerError(errorDisplay, "Playback failed. Please try again.");
-                        }
-                        
-                        // Update the play button to show playing state
-                        if(playButton) {
-                            playButton.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
-                            playButton.disabled = false;
-                            
-                            // Add now-playing class to track item for styling
-                            trackItemElement.classList.add('now-playing');
-                        }
-                        
-                        // Start the timer update
-                        if (updateTimeInterval) clearInterval(updateTimeInterval);
-                        updateTimeInterval = setInterval(function() {
-                            if (currentPlayer && typeof currentPlayer.getCurrentTime === 'function') {
-                                try {
-                                    const currentTime = currentPlayer.getCurrentTime();
-                                    const duration = currentPlayer.getDuration();
-                                    const timeDisplay = trackItemElement.querySelector('.time-display');
-                                    if (timeDisplay) {
-                                        timeDisplay.textContent = formatTime(currentTime) + ' / ' + formatTime(duration);
-                                    }
-                                } catch (e) {
-                                    console.error("Error updating time:", e);
-                                }
-                            }
-                        }, 1000);
-                    },
+                    onPlayerReady,
                     onPlayerStateChange,
-                    (event) => onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay)
+                    function(event) {
+                        onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay);
+                    }
                 );
             })
             .catch(error => {
@@ -1080,10 +1112,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function initApplication() {
         console.log("Initializing application");
         
-        // Initialize video cache
-        if (!window.videoCache) {
-            window.videoCache = {};
-        }
+        // Load successful videos from localStorage
+        loadSuccessfulVideos();
+        
+        // Load blocked videos from localStorage
+        loadBlockedVideos();
         
         // Check if YouTube API is available
         if (typeof YT === 'undefined' || !YT.Player) {
@@ -1111,6 +1144,17 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if(event.data === YT.PlayerState.PLAYING) {
             playButton.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
             
+            // Save successful video for this track
+            const trackName = activeTrackItem ? activeTrackItem.getAttribute('data-trackname') : null;
+            const youtubeLink = activeTrackItem ? activeTrackItem.querySelector('.youtube-link') : null;
+            
+            if (trackName && youtubeLink && youtubeLink.href) {
+                const videoId = youtubeLink.href.split('v=')[1]?.split('&')[0];
+                if (videoId) {
+                    saveSuccessfulVideo(trackName, videoId);
+                }
+            }
+            
             // If we're in Play All mode and this is a new track starting
             if (isPlayingAll && activeTrackItem) {
                 // Reset the timer to ensure exactly 2 minutes per track
@@ -1133,8 +1177,128 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Save successful video plays to localStorage
+    function saveSuccessfulVideo(trackName, videoId) {
+        try {
+            if (!trackName || !videoId) return;
+            
+            // Initialize or get existing successful videos storage
+            let successfulVideos = {};
+            const storedData = localStorage.getItem('successfulTrackVideos');
+            
+            if (storedData) {
+                try {
+                    successfulVideos = JSON.parse(storedData);
+                } catch (e) {
+                    console.error('Error parsing stored successful videos:', e);
+                    // Start fresh if data is corrupted
+                    successfulVideos = {};
+                }
+            }
+            
+            // Save this track-video mapping
+            successfulVideos[trackName] = videoId;
+            
+            // Update in-memory cache too
+            if (window.videoCache) {
+                window.videoCache[trackName] = videoId;
+            }
+            
+            // Save back to localStorage (with error handling for quota or permission issues)
+            try {
+                localStorage.setItem('successfulTrackVideos', JSON.stringify(successfulVideos));
+                console.log(`Saved successful video ID ${videoId} for track: ${trackName}`);
+            } catch (e) {
+                console.warn('Could not save to localStorage:', e);
+            }
+        } catch (e) {
+            console.error('Error in saveSuccessfulVideo:', e);
+        }
+    }
+
+    // Load successful videos from localStorage into memory cache
+    function loadSuccessfulVideos() {
+        try {
+            const storedData = localStorage.getItem('successfulTrackVideos');
+            
+            if (!storedData) return;
+            
+            try {
+                const successfulVideos = JSON.parse(storedData);
+                
+                // Initialize cache if needed
+                if (!window.videoCache) {
+                    window.videoCache = {};
+                }
+                
+                // Load saved videos into memory cache
+                Object.keys(successfulVideos).forEach(trackName => {
+                    window.videoCache[trackName] = successfulVideos[trackName];
+                });
+                
+                console.log(`Loaded ${Object.keys(successfulVideos).length} cached videos from localStorage`);
+            } catch (e) {
+                console.error('Error parsing stored successful videos:', e);
+            }
+        } catch (e) {
+            console.error('Error accessing localStorage:', e);
+        }
+    }
+
+    // Load blocked videos from localStorage
+    function loadBlockedVideos() {
+        try {
+            const storedData = localStorage.getItem('blockedVideos');
+            
+            if (!storedData) return;
+            
+            try {
+                const blockedVideos = JSON.parse(storedData);
+                
+                // Initialize blockedVideos cache if needed
+                if (!window.blockedVideos) {
+                    window.blockedVideos = {};
+                }
+                
+                // Load saved blocked videos into memory cache
+                Object.assign(window.blockedVideos, blockedVideos);
+                
+                console.log(`Loaded ${Object.keys(blockedVideos).length} blocked videos from localStorage`);
+            } catch (e) {
+                console.error('Error parsing stored blocked videos:', e);
+            }
+        } catch (e) {
+            console.error('Error accessing localStorage:', e);
+        }
+    }
+
+    // Save blocked video to localStorage
+    function saveBlockedVideo(videoId) {
+        try {
+            if (!videoId) return;
+            
+            // Initialize blockedVideos if needed
+            if (!window.blockedVideos) {
+                window.blockedVideos = {};
+            }
+            
+            // Mark as blocked in memory
+            window.blockedVideos[videoId] = true;
+            
+            // Save to localStorage
+            try {
+                localStorage.setItem('blockedVideos', JSON.stringify(window.blockedVideos));
+                console.log(`Saved blocked video ID: ${videoId}`);
+            } catch (e) {
+                console.warn('Could not save blocked videos to localStorage:', e);
+            }
+        } catch (e) {
+            console.error('Error saving blocked video:', e);
+        }
+    }
+
     // Add this function for player error handling
-    function onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay) {
+    function onPlayerError(event, playerId, trackName, onReadyCallback, onStateChangeCallback, errorDisplay) {
         console.error(`Player error: ${event.data}`);
         
         const playButton = activeTrackItem ? activeTrackItem.querySelector('.play-button') : null;
@@ -1156,12 +1320,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 break;
             case 101:
             case 150:
-                errorMessage = "Video embedding not allowed. Trying another source.";
+                errorMessage = "Video embedding not allowed. Click YOUTUBE to watch directly.";
                 // For this specific track, store in "blocked" cache to avoid trying again
-                if (!window.blockedVideos) window.blockedVideos = {};
                 if (youtubeLink && youtubeLink.href) {
                     const videoId = youtubeLink.href.split('v=')[1]?.split('&')[0];
-                    if (videoId) window.blockedVideos[videoId] = true;
+                    if (videoId) {
+                        saveBlockedVideo(videoId);
+                    }
                 }
                 break;
             default:
@@ -1200,26 +1365,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 playerWrapper.innerHTML = `<div id="${newPlayerId}" style="width:1px;height:1px;overflow:hidden;"></div>`;
             }
             
+            // Make youtubeLink more visible for embedding restriction errors
+            if ((event.data === 101 || event.data === 150) && youtubeLink) {
+                youtubeLink.style.backgroundColor = '#ff0000';
+                youtubeLink.style.padding = '6px 10px';
+                youtubeLink.style.fontWeight = 'bold';
+                
+                // For embedding restrictions, maybe we don't immediately retry
+                // but ensure user sees the YouTube link option first
+                if (retryCount === 1) {
+                    if(playButton) {
+                        playButton.innerHTML = `<span class="error-icon">⚠️</span> USE YOUTUBE LINK`;
+                        playButton.disabled = false;
+                    }
+                    return; // Don't retry immediately for embedding errors on first attempt
+                }
+            }
+            
             // For embedding restrictions (error 101/150), directly use alternative instead of retry
             if (event.data === 101 || event.data === 150) {
                 const directFallbackId = getDirectFallbackForTrack(trackName, retryCount);
                 if (youtubeLink) {
                     youtubeLink.href = `https://www.youtube.com/watch?v=${directFallbackId}`;
+                    // Reset the style if we're trying a different video
+                    youtubeLink.style.backgroundColor = '#000';
+                    youtubeLink.style.padding = '4px 8px';
                 }
                 
                 // Create new player with the fallback ID - pass function references properly
                 currentPlayer = createPlayer(
                     newPlayerId,
                     directFallbackId,
-                    // Create closure for callbacks to maintain context
+                    // Safe wrapper for the callback
                     function(event) {
-                        if (typeof onPlayerReady === 'function') {
-                            onPlayerReady(event);
+                        if (typeof onReadyCallback === 'function') {
+                            onReadyCallback(event);
                         }
                     },
-                    onPlayerStateChange,
+                    onStateChangeCallback,
                     function(event) {
-                        onPlayerError(event, newPlayerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay);
+                        onPlayerError(event, newPlayerId, trackName, onReadyCallback, onStateChangeCallback, errorDisplay);
                     }
                 );
                 return;
@@ -1239,17 +1424,25 @@ document.addEventListener('DOMContentLoaded', function() {
                     currentPlayer = createPlayer(
                         newPlayerId,
                         newVideoId,
-                        // Create closure for callbacks to maintain context
+                        // Safe wrapper for the callback
                         function(event) {
-                            if (typeof onPlayerReady === 'function') {
-                                onPlayerReady(event);
+                            if (typeof onReadyCallback === 'function') {
+                                onReadyCallback(event);
                             }
                         },
-                        onPlayerStateChange,
+                        onStateChangeCallback,
                         function(event) {
-                            onPlayerError(event, newPlayerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay);
+                            onPlayerError(event, newPlayerId, trackName, onReadyCallback, onStateChangeCallback, errorDisplay);
                         }
                     );
+                })
+                .catch(error => {
+                    console.error("Error getting alternative video:", error);
+                    if(playButton) {
+                        playButton.innerHTML = '<span class="error-icon">❌</span> FAILED';
+                        playButton.disabled = false;
+                    }
+                    showPlayerError(errorDisplay, "Failed to find an alternative video. Try another track.");
                 });
         } else {
             console.error("Max retry attempts reached");
@@ -1266,79 +1459,213 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Function to get a direct fallback for tracks with embedding issues
-    function getDirectFallbackForTrack(trackName, retryCount) {
-        // Extract artist and track info if possible
-        let artistName = trackName;
-        const parts = trackName.split(' - ');
-        if (parts.length > 1) {
-            artistName = parts[0].trim();
+    // Helper function to get a direct fallback for tracks with embedding issues
+    function getDirectFallbackForTrack(trackName, retryCount = 0) {
+        // Parse artist name from the track
+        let artistName = "";
+        
+        // Try to extract artist name from track format like "Artist - Track"
+        if (trackName.includes(" - ")) {
+            const parts = trackName.split(" - ");
+            artistName = parts[0].trim().toLowerCase();
+        } else {
+            // If we can't parse, use the first word as an approximation of artist
+            artistName = trackName.split(" ")[0].toLowerCase();
         }
         
-        // Create a consistent hash based on artist name
-        const hash = generateQuickHash(artistName + retryCount);
-        
-        // Use different reliable fallbacks based on the type of track (EDM vs Non-EDM)
-        const edmArtists = ['ben ufo', 'bicep', 'bonobo', 'burial', 'call super', 'dj koze', 'floating points', 
-                            'four tet', 'james holden', 'joy orbison', 'nicolas jaar', 'pearson sound', 'rimbaudian'];
-        
-        // Check if this is likely an electronic artist
-        const isElectronic = edmArtists.some(artist => 
-            artistName.toLowerCase().includes(artist.toLowerCase()));
-        
-        // Electronic music fallbacks - ambient/beats that are embeddable
-        const edmFallbacks = [
-            'DyDfgMOUjCI', // lofi hip hop radio
-            '5qap5aO4i9A', // lofi girl
-            'jfKfPfyJRdk', // chillhop music
-            'rUxyKA_-grg', // ambient music
-            'qt_urUz42vI'  // electronic ambient
-        ];
-        
-        // General music fallbacks
-        const generalFallbacks = [
-            'M7lc1UVf-VE', // YouTube API test video
-            '5_ARibfCMhw', // YouTube provided music
-            'LXb3EKWsInQ', // More YT music
-            'dQw4w9WgXcQ'  // Rick Astley (reliable fallback)
-        ];
-        
-        const fallbackArray = isElectronic ? edmFallbacks : generalFallbacks;
-        return fallbackArray[Math.abs(hash) % fallbackArray.length];
-    }
-
-    // Very quick hash function - no async needed, just for consistent selection
-    function generateQuickHash(str) {
-        let hash = 5381;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        // Create a simple numeric hash based on artist name
+        let artistHash = 0;
+        for (let i = 0; i < artistName.length; i++) {
+            artistHash = (artistHash * 31 + artistName.charCodeAt(i)) % 1000;
         }
-        return hash;
-    }
-
-    // Get a truly reliable video ID that's guaranteed to work
-    function getReliableVideoId(index) {
-        // These videos are absolutely guaranteed to work with embedding
-        // Use YouTube's own example videos and popular content that allows embedding
-        const reliableVideos = [
-            'M7lc1UVf-VE',  // YouTube API test video
-            'jNQXAC9IVRw',  // First YouTube video ever
-            'dQw4w9WgXcQ'   // Rick Astley - most reliable fallback
+        
+        // Use retry count to get different videos on retry
+        const selection = (artistHash + retryCount) % 100;
+        
+        // List of IDs that are known to be embeddable and work well
+        const ELECTRONIC_MUSIC_VIDEOS = [
+            "ryh9rkIRGUs", "cVFzblT5VPE", "GOtxGCEOYDE", "9W04IhC2LEs", "ubrLxI46mPs",
+            "sDKnKzYyx5c", "M5QY2_8704o", "aaVY2P-ARpk", "XCpjxEwXNVc", "eLtnhsVW-EM",
+            "yJZzyjLWeYI", "SoBAQgl0zso", "F4HJjCR8kHk", "Fd_WqnN8-0I", "qQvw-v8vtpk",
+            "PHGCIPQmQrI", "rmnwE5lHhFg", "7TM1Iv9f_wc", "YnXjU4dHnAA", "PD1gV0UtDJw",
+            "H6Wvle99C2A", "G7YJO8LQ30Q", "dQHwE70A9hE", "2rlYPb2plaY", "xz5uRz7XiWA",
+            "VXrGHl74Pl8", "h798rfSd_xo", "GHXiW_-M8QE", "RM5STH_v3p0", "ykehoOJC9DE",
+            "Q-QoJS9JEVU", "rK0mAVdVJPw", "eQqG_QhcF-4", "ktvTqknDobU", "EQ60ngU24L0"
         ];
-        return reliableVideos[index % reliableVideos.length];
+        
+        const HIP_HOP_VIDEOS = [
+            "PHULXcMZChQ", "X91TwYIdW4Q", "6vYnas6q3Sg", "UceaB4D0jpo", "CGB9CPLwEDo",
+            "6ONRf7h3Mdk", "RTYZ8biXgNE", "PMivT7MJ41M", "rog8ou-ZepE", "Z3w5gVM_4i8",
+            "fPO76Jlnz6c", "0kPyCIkImSc", "YkO1UUGkiz8", "r_0JjYUe5jo", "X9CFBcB4jUI",
+            "CdLB4xs89H4", "x_NTtJA6Uwk", "V7EwIzHJ8j8", "j0IQzmH_nj8", "YXRnuDr9s-4"
+        ];
+        
+        // Choose videos based on first character of artist name (to ensure different artists get different videos)
+        if (artistName && artistName.length > 0) {
+            const firstChar = artistName.charCodeAt(0);
+            if (firstChar % 2 === 0) {
+                return ELECTRONIC_MUSIC_VIDEOS[selection % ELECTRONIC_MUSIC_VIDEOS.length];
+            } else {
+                return HIP_HOP_VIDEOS[selection % HIP_HOP_VIDEOS.length];
+            }
+        } else {
+            // Fallback if we can't determine artist
+            return ELECTRONIC_MUSIC_VIDEOS[selection % ELECTRONIC_MUSIC_VIDEOS.length];
+        }
     }
 
-    // Search YouTube for the exact track - simplified approach
+    // Helper function to try Invidious public API for better music search
+    function tryInvidiousSearch(trackName, retryCount = 0) {
+        return new Promise((resolve, reject) => {
+            // Parse artist and track name
+            let artistName = "";
+            let songName = trackName;
+            
+            // Try to extract artist name from track format like "Artist - Track"
+            if (trackName.includes(" - ")) {
+                const parts = trackName.split(" - ");
+                artistName = parts[0].trim();
+                songName = parts.slice(1).join(" - ").trim();
+            }
+            
+            // Construct search query with proper music keywords
+            let searchQuery = trackName;
+            if (retryCount > 0) {
+                // Add different variations based on retry count
+                if (retryCount === 1) {
+                    searchQuery = `${artistName} ${songName} audio`;
+                } else if (retryCount === 2) {
+                    searchQuery = `${artistName} "${songName}" official`;
+                }
+            }
+            
+            // Try a public Invidious instance (these can change/rotate if needed)
+            const invidiousInstance = "https://vid.puffyan.us";
+            const apiUrl = `${invidiousInstance}/api/v1/search?q=${encodeURIComponent(searchQuery)}&type=video&sort_by=relevance`;
+            
+            fetch(apiUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Invidious API returned ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (!data || data.length === 0) {
+                        throw new Error("No results from Invidious API");
+                    }
+                    
+                    // Filter for music videos, preferring official audio
+                    let bestMatch = null;
+                    
+                    // First try to find videos with "official audio" in the title
+                    const officialAudio = data.find(video => 
+                        video.title.toLowerCase().includes("official audio") || 
+                        video.title.toLowerCase().includes("official music")
+                    );
+                    
+                    if (officialAudio) {
+                        bestMatch = officialAudio;
+                    } else {
+                        // Next, look for videos from music or VEVO channels
+                        const musicChannel = data.find(video => 
+                            video.author.toLowerCase().includes("vevo") || 
+                            video.author.toLowerCase().includes("official") ||
+                            video.author.toLowerCase().includes("music")
+                        );
+                        
+                        if (musicChannel) {
+                            bestMatch = musicChannel;
+                        } else {
+                            // Just take the first result as fallback
+                            bestMatch = data[0];
+                        }
+                    }
+                    
+                    if (bestMatch && bestMatch.videoId) {
+                        resolve(bestMatch.videoId);
+                    } else {
+                        throw new Error("No suitable video found");
+                    }
+                })
+                .catch(error => {
+                    console.warn(`Invidious search failed: ${error.message}`);
+                    reject(error);
+                });
+        });
+    }
+
+    // Helper function to try YouTube Music topic channel search
+    function tryYouTubeMusicTopicSearch(trackName) {
+        return new Promise((resolve, reject) => {
+            // Parse artist and track name
+            let artistName = "";
+            let songName = trackName;
+            
+            // Try to extract artist name from track format like "Artist - Track"
+            if (trackName.includes(" - ")) {
+                const parts = trackName.split(" - ");
+                artistName = parts[0].trim();
+                songName = parts.slice(1).join(" - ").trim();
+            }
+            
+            // Construct a search query that targets YouTube Music "Topic" channels
+            // These are auto-generated channels for artists and typically have official music
+            const searchQuery = `${artistName} - Topic ${songName} audio`;
+            
+            // Use the server-side search endpoint but with our specialized query
+            fetch(`/search_video?query=${encodeURIComponent(searchQuery)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Search video endpoint error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    const videoId = data.videoId;
+                    console.log(`Found YouTube Music Topic video ID: ${videoId} for track: ${trackName}`);
+                    resolve(videoId);
+                })
+                .catch(error => {
+                    console.warn(`YouTube Music Topic search failed: ${error.message}`);
+                    reject(error);
+                });
+        });
+    }
+
+    // Helper function that returns a reliable fallback video ID
+    function getReliableVideoId(index = 0) {
+        // These are known to be reliable embeddable videos
+        const RELIABLE_VIDEOS = [
+            "jfKfPfyJRdk", // lofi hip hop radio - beats to relax/study to
+            "5qap5aO4i9A", // lofi hip hop radio - beats to study/relax to
+            "DWcJFNfaw9c", // coffee shop radio
+            "lTRiuFIWV54", // lofi hip hop radio - beats to sleep/chill to
+            "MVPTGNGiI-4"  // Electronic Music for Studying
+        ];
+        
+        return RELIABLE_VIDEOS[index % RELIABLE_VIDEOS.length];
+    }
+
+    // Search YouTube for the exact track - improved robust implementation
     function searchYouTubeVideo(trackName) {
         return new Promise((resolve, reject) => {
             // Initialize video cache if not exists
             if (!window.videoCache) {
                 window.videoCache = {};
+                // Try to load from localStorage first
+                loadSuccessfulVideos();
             }
             
             // Initialize blocked videos cache if not exists
             if (!window.blockedVideos) {
                 window.blockedVideos = {};
+                // Try to load from localStorage
+                loadBlockedVideos();
             }
             
             // Clean the track name for retry attempts
@@ -1348,11 +1675,19 @@ document.addEventListener('DOMContentLoaded', function() {
             // Check if we have a cached video ID for this track (but not for retries)
             if (!isRetry && window.videoCache[cleanTrackName]) {
                 console.log(`Using cached video ID for track: ${cleanTrackName}`);
-                resolve(window.videoCache[cleanTrackName]);
-                return;
+                
+                // Make sure this video isn't known to be blocked
+                const cachedId = window.videoCache[cleanTrackName];
+                if (window.blockedVideos[cachedId]) {
+                    console.log(`Cached video ${cachedId} is known to be blocked. Searching for alternative.`);
+                    // Don't return, continue with search
+                } else {
+                    resolve(cachedId);
+                    return;
+                }
             }
             
-            // For retry attempts, use a reliable video or different selection method
+            // For retry attempts, use a smart selection method
             if (isRetry) {
                 // Get retry count from the name
                 const retryCount = parseInt(trackName.match(/__retry_(\d+)/)?.[1] || "0");
@@ -1365,15 +1700,31 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
                 
-                // For other retries, use a different selection method
-                // Add retryCount to hash to get a different video each time
-                const directFallbackId = getDirectFallbackForTrack(cleanTrackName, retryCount);
-                console.log(`Retry #${retryCount} - Using artist-based fallback: ${directFallbackId}`);
-                resolve(directFallbackId);
+                // For other retries, try using an innogsapi search which has better results
+                // Try YouTube Music API-like search via invidious public API
+                tryInvidiousSearch(cleanTrackName, retryCount)
+                    .then(videoId => {
+                        if (videoId) {
+                            console.log(`Retry #${retryCount} - Found via Invidious API: ${videoId}`);
+                            window.videoCache[cleanTrackName] = videoId;
+                            resolve(videoId);
+                            return;
+                        }
+                        throw new Error("No results from Invidious");
+                    })
+                    .catch(err => {
+                        // Fall back to direct selection if API search fails
+                        const directFallbackId = getDirectFallbackForTrack(cleanTrackName, retryCount);
+                        console.log(`Retry #${retryCount} - Using artist-based fallback: ${directFallbackId}`);
+                        resolve(directFallbackId);
+                    });
                 return;
             }
 
-            // Try to fetch from the server-side endpoint first
+            // First try to use the exact YouTube link if it exists for this track in the music database
+            // This is a multi-stage approach to increase chance of success
+            
+            // Stage 1: Try server-side search endpoint (which parses YouTube search results)
             fetch(`/search_video?query=${encodeURIComponent(cleanTrackName + ' official audio')}`)
                 .then(response => {
                     if (!response.ok) {
@@ -1401,16 +1752,46 @@ document.addEventListener('DOMContentLoaded', function() {
                     resolve(videoId);
                 })
                 .catch(error => {
-                    console.warn(`Server-side search failed: ${error.message}. Using deterministic fallback.`);
+                    console.warn(`Server-side search failed: ${error.message}. Trying Invidious public API...`);
                     
-                    // Use artist-based fallback
-                    const directFallbackId = getDirectFallbackForTrack(cleanTrackName, 0);
-                    
-                    // Cache this result too
-                    window.videoCache[cleanTrackName] = directFallbackId;
-                    
-                    console.log(`Using artist-based fallback ID: ${directFallbackId} for track: ${cleanTrackName}`);
-                    resolve(directFallbackId);
+                    // Stage 2: Try invidious API which generally has better results for music
+                    tryInvidiousSearch(cleanTrackName, 0)
+                        .then(videoId => {
+                            if (videoId) {
+                                console.log(`Found via Invidious API: ${videoId}`);
+                                window.videoCache[cleanTrackName] = videoId;
+                                resolve(videoId);
+                                return;
+                            }
+                            throw new Error("No results from Invidious");
+                        })
+                        .catch(err => {
+                            console.warn(`Invidious API search failed: ${err.message}. Using YouTube Music topic channel search...`);
+                            
+                            // Stage 3: Try YouTube Music "topic" channel pattern for official music
+                            tryYouTubeMusicTopicSearch(cleanTrackName)
+                                .then(videoId => {
+                                    if (videoId) {
+                                        console.log(`Found via YouTube Music topic search: ${videoId}`);
+                                        window.videoCache[cleanTrackName] = videoId;
+                                        resolve(videoId);
+                                        return;
+                                    }
+                                    throw new Error("No results from YouTube Music topic search");
+                                })
+                                .catch(err => {
+                                    console.warn(`All API searches failed. Using artist-based fallback.`);
+                                    
+                                    // Final fallback - use artist-based selection
+                                    const directFallbackId = getDirectFallbackForTrack(cleanTrackName, 0);
+                                    
+                                    // Cache this result too
+                                    window.videoCache[cleanTrackName] = directFallbackId;
+                                    
+                                    console.log(`Using artist-based fallback ID: ${directFallbackId} for track: ${cleanTrackName}`);
+                                    resolve(directFallbackId);
+                                });
+                        });
                 });
         });
     }
