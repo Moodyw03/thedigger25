@@ -4,22 +4,50 @@
 
 {% block content %}
 <style>
+    /* Track styling */
+    .track-item {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        flex-direction: column; /* Changed to column to place player below track info */
+    }
+    
+    .track-item-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+    
+    .track-info {
+        flex-grow: 1;
+    }
+    
+    .track-name {
+        font-weight: normal;
+    }
+    
+    .track-actions {
+        margin-left: 10px;
+    }
+    
+    /* Player styling */
     .inline-player-container {
         margin-top: 10px;
-        margin-bottom: 15px;
-        padding: 15px;
-        border-radius: 8px;
+        margin-left: 20px; /* Indent player under track */
+        margin-right: 20px;
+        display: none;
+        padding: 8px;
         background-color: #f8f8f8;
-        border: 1px solid #e0e0e0;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        border-radius: 4px;
+        border: 1px solid #ddd;
+        width: calc(100% - 40px); /* Account for margins */
     }
     
     .youtube-player-wrapper {
-        margin-bottom: 12px;
-        display: flex;
-        justify-content: center;
-        max-width: 100%;
+        height: 1px; /* Hide visually but keep audio */
         overflow: hidden;
+        margin-bottom: 5px;
     }
     
     .audio-controls {
@@ -27,90 +55,73 @@
         align-items: center;
         justify-content: space-between;
         font-size: 0.9em;
-        margin-top: 8px;
-        padding-top: 8px;
-        border-top: 1px solid #eaeaea;
+        height: 22px; /* Fixed height to prevent layout shifts */
+        padding: 3px 0;
     }
     
     .time-display {
-        margin-right: 10px;
-        min-width: 120px;
         font-family: monospace;
-        font-size: 14px;
+        min-width: 90px;
+        display: inline-block;
+        font-size: 12px;
+        color: #333;
+        margin-right: 10px;
     }
     
+    /* Play button styling */
+    .play-button {
+        background-color: #333;
+        color: #fff;
+        border: none;
+        border-radius: 3px;
+        padding: 4px 8px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+    
+    .play-button:hover {
+        background-color: #555;
+    }
+    
+    .play-icon {
+        margin-right: 3px;
+    }
+    
+    /* YouTube link styling */
     .youtube-link {
-        display: inline-block;
-        padding: 5px 10px;
-        border-radius: 4px;
-        background-color: #ff0000;
-        color: white;
+        color: #333;
         text-decoration: none;
-        font-size: 0.9em;
-        font-weight: bold;
-        transition: background-color 0.2s;
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid #ccc;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background-color: #f1f1f1;
     }
     
     .youtube-link:hover {
-        background-color: #cc0000;
+        background-color: #e5e5e5;
         text-decoration: none;
     }
-
-    .play-button {
-        padding: 6px 12px;
-        border-radius: 4px;
-        background-color: #2a7de1;
-        color: white;
-        border: none;
-        cursor: pointer;
-        font-weight: bold;
-        transition: background-color 0.2s;
-    }
-
-    .play-button:hover {
-        background-color: #1c5db9;
-    }
-
-    .play-icon, .pause-icon, .replay-icon {
+    
+    .youtube-icon {
         margin-right: 4px;
+        color: #ff0000;
     }
     
-    /* Track item styling */
-    .track-item {
-        padding: 12px;
-        margin-bottom: 10px;
-        border-radius: 6px;
-        background-color: #ffffff;
-        border: 1px solid #e5e5e5;
-        transition: box-shadow 0.2s;
-    }
-    
-    .track-item:hover {
-        box-shadow: 0 3px 8px rgba(0,0,0,0.08);
-    }
-    
-    .track-info {
-        margin-bottom: 8px;
-    }
-    
-    .track-number {
+    /* Playing state */
+    .playing-indicator {
         display: inline-block;
-        font-weight: bold;
-        margin-right: 5px;
-        min-width: 25px;
+        padding: 2px 6px;
+        background-color: #333;
+        color: white;
+        border-radius: 3px;
+        font-size: 11px;
+        margin-right: 8px;
     }
     
-    .track-name {
-        font-size: 15px;
-    }
-    
-    .track-actions {
-        margin-top: 6px;
-        display: flex;
-        justify-content: flex-start;
-    }
-    
-    /* Track list styling */
+    /* Track list */
     .track-list {
         list-style-type: none;
         padding: 0;
@@ -436,24 +447,26 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         tracksOutput += `
                             <li class="track-item" data-trackname="${trackName}">
-                                <div class="track-info">
-                                    <span class="track-number">${index + 1}.</span>
-                                    <span class="track-name">${trackName}</span>
-                                </div>
-                                <div class="track-actions">
-                                    <button class="play-button" data-track="${encodedTrack}">
-                                        <span class="play-icon">▶</span> Play
-                                    </button>
+                                <div class="track-item-content">
+                                    <div class="track-info">
+                                        <span class="track-number">${index + 1}.</span>
+                                        <span class="track-name">${trackName}</span>
+                                    </div>
+                                    <div class="track-actions">
+                                        <button class="play-button" data-track="${encodedTrack}">
+                                            <span class="play-icon">▶</span> Play
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="inline-player-container" style="display: none;">
                                     <div class="youtube-player-wrapper"></div>
                                     <div class="audio-controls">
                                         <div class="time-display">0:00 / 0:00</div>
-                                        <a href="#" class="youtube-link" target="_blank" title="Open in YouTube">
-                                            <svg class="youtube-icon" viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right: 4px;">
-                                                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="white"/>
+                                        <a href="#" class="youtube-link" target="_blank">
+                                            <svg viewBox="0 0 24 24" width="14" height="14" style="vertical-align: middle;">
+                                                <path d="M10,15L15.19,12L10,9V15M21.56,7.17C21.69,7.64 21.78,8.27 21.84,9.07C21.91,9.87 21.94,10.56 21.94,11.16L22,12C22,14.19 21.84,15.8 21.56,16.83C21.31,17.73 20.73,18.31 19.83,18.56C19.36,18.69 18.5,18.78 17.18,18.84C15.88,18.91 14.69,18.94 13.59,18.94L12,19C7.81,19 5.2,18.84 4.17,18.56C3.27,18.31 2.69,17.73 2.44,16.83C2.31,16.36 2.22,15.73 2.16,14.93C2.09,14.13 2.06,13.44 2.06,12.84L2,12C2,9.81 2.16,8.2 2.44,7.17C2.69,6.27 3.27,5.69 4.17,5.44C4.64,5.31 5.5,5.22 6.82,5.16C8.12,5.09 9.31,5.06 10.41,5.06L12,5C16.19,5 18.8,5.16 19.83,5.44C20.73,5.69 21.31,6.27 21.56,7.17Z" fill="#ff0000"/>
                                             </svg>
-                                            View on YouTube
+                                            YouTube
                                         </a>
                                     </div>
                                 </div>
@@ -707,7 +720,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Create a unique ID for the player instance
         const playerId = 'player-' + Date.now();
-        playerWrapper.innerHTML = `<div id="${playerId}"></div>`;
+        playerWrapper.innerHTML = `<div id="${playerId}" style="width:1px;height:1px;overflow:hidden;"></div>`;
         
         // Get a video for this track
         searchYouTubeVideo(trackName)
@@ -732,7 +745,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     // On player ready
                     function onPlayerReady(event) {
                         console.log("Player ready, playing video");
-                        event.target.playVideo();
+                        try {
+                            event.target.playVideo();
+                        } catch(e) {
+                            console.error("Error playing video on ready:", e);
+                        }
                         
                         // Update the play button to show playing state
                         if(playButton) {
@@ -792,7 +809,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             
                             // Create a new player div
                             const newPlayerId = 'player-retry-' + Date.now();
-                            playerWrapper.innerHTML = `<div id="${newPlayerId}"></div>`;
+                            playerWrapper.innerHTML = `<div id="${newPlayerId}" style="width:1px;height:1px;overflow:hidden;"></div>`;
                             
                             // Search for a different video with retry indication
                             searchYouTubeVideo(`${trackName}__retry_${retryCount}`)
@@ -964,24 +981,31 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log(`Creating YouTube player for ${containerId} with video ${videoId}`);
         
         try {
-            // Create a properly sized player
+            // Create a minimal player for audio only (basically invisible)
             return new YT.Player(containerId, {
-                height: '180',
-                width: '320',
+                height: '1',
+                width: '1',
                 videoId: videoId,
                 playerVars: {
                     'autoplay': 1,
                     'rel': 0,
-                    'showinfo': 1,
+                    'showinfo': 0,
                     'modestbranding': 1,
-                    'controls': 1,
-                    'fs': 1,
+                    'controls': 0,
+                    'fs': 0,
                     'playsinline': 1,
                     'enablejsapi': 1
                 },
                 events: {
                     'onReady': function(event) {
                         console.log('Player ready');
+                        
+                        // Try to play the video immediately
+                        try {
+                            event.target.playVideo();
+                        } catch(e) {
+                            console.error('Error playing video:', e);
+                        }
                         
                         // Call the provided callback
                         if (typeof onReady === 'function') {
