@@ -310,35 +310,39 @@ document.addEventListener('DOMContentLoaded', function() {
                 const trackListOl = document.createElement('ol');
                 trackListOl.className = 'track-list';
 
-                mix.tracks.forEach(track => {
-                    const trackLi = document.createElement('li');
-                    trackLi.className = 'track-item';
-                    trackLi.innerHTML = `
-                        <div class="track-info">
-                            <span class="track-name">${escapeHtml(track.track)}</span>
-                            <button class="play-button" data-track="${encodeURIComponent(track.track)}" title="Play track">
-                                <span class="play-icon">▶</span> Play
-                            </button>
-                        </div>
-                        <div class="inline-player-container" style="display: none;">
-                            <div class="player-controls">
-                                <div class="audio-controls">
-                                    <span class="control-btn play-pause-btn">⏸</span>
-                                    <span class="time-display">0:00</span>
-                                    <a href="#" class="youtube-link" target="_blank" title="View on YouTube">
-                                        <svg class="youtube-icon" viewBox="0 0 24 24" width="22" height="22">
-                                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="#ff0000"/>
-                                        </svg>
-                                    </a>
+                // Render tracks for each mix
+                let tracksOutput = `<ul class="tracks-list">`;
+                
+                // Check if this mix has a tracklist
+                if (mix.tracks.length > 0) {
+                    mix.tracks.forEach((track, index) => {
+                        const trackName = track.track.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        const encodedTrack = encodeURIComponent(track.track);
+                        
+                        tracksOutput += `
+                            <li class="track-item" data-trackname="${trackName}">
+                                <div class="track-info">
+                                    <span class="track-number">${index + 1}.</span>
+                                    <span class="track-name">${trackName}</span>
                                 </div>
-                                <div class="youtube-player-wrapper">
-                                    <!-- YouTube player will be inserted here -->
+                                <div class="track-actions">
+                                    <button class="play-button" data-track="${encodedTrack}">
+                                        <span class="play-icon">▶</span> Play
+                                    </button>
                                 </div>
-                            </div>
-                        </div>
-                    `;
-                    trackListOl.appendChild(trackLi);
-                });
+                                <div class="inline-player-container" style="display: none;">
+                                    <div class="youtube-player-wrapper"></div>
+                                    <div class="audio-controls">
+                                        <div class="time-display">0:00 / 0:00</div>
+                                        <a href="#" class="youtube-link" target="_blank">YouTube</a>
+                                    </div>
+                                </div>
+                            </li>`;
+                    });
+                } else {
+                    tracksOutput += `<li class="no-tracks">No tracklist available</li>`;
+                }
+                trackListOl.innerHTML = tracksOutput + '</ul>';
                 tracklistContainer.appendChild(trackListOl);
                 mixSection.appendChild(tracklistContainer);
             } else {
@@ -454,23 +458,54 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        // Load YouTube API and other initialization
+        initApplication();
+        
         // Setup event listeners for any existing play buttons
         setupPlayButtons(document);
-    };
-
-    function setupPlayButtons(container) {
-        const playButtons = container.querySelectorAll('.play-button');
-        playButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                if (!youtubeReady) {
-                    console.warn("YouTube API not ready yet.");
-                    showError("Player is loading, please wait...");
-                    return;
-                }
+        
+        // Handle play button clicks
+        document.querySelectorAll('.play-button').forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Get the track name and set it as an attribute on the track-item element
                 const trackName = decodeURIComponent(this.dataset.track);
                 const trackItem = this.closest('.track-item');
-                playTrack(trackName, trackItem);
+                
+                // Set data-trackname attribute on the track-item
+                if (trackItem && trackName) {
+                    trackItem.setAttribute('data-trackname', trackName);
+                }
+                
+                playTrack(trackItem);
             });
+        });
+    };
+
+    // Function to set up play button events on dynamically added elements
+    function setupPlayButtons(container) {
+        if (!container) return;
+        
+        container.querySelectorAll('.play-button').forEach(button => {
+            if (!button.hasPlayButtonHandler) {
+                button.hasPlayButtonHandler = true;
+                
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Get the track name and set it as an attribute on the track-item element
+                    const trackName = decodeURIComponent(this.dataset.track);
+                    const trackItem = this.closest('.track-item');
+                    
+                    // Set data-trackname attribute on the track-item
+                    if (trackItem && trackName) {
+                        trackItem.setAttribute('data-trackname', trackName);
+                    }
+                    
+                    playTrack(trackItem);
+                });
+            }
         });
     }
     
@@ -510,136 +545,156 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Function to play a YouTube track
-    function playTrack(trackName, trackItemElement) {
-        console.log(`Attempting to play: ${trackName}`);
+    // Function to handle playing a track
+    function playTrack(trackItemElement) {
+        if (!trackItemElement) return;
         
-        // If a player is active, deactivate it
+        const trackName = trackItemElement.getAttribute('data-trackname');
+        if (!trackName) {
+            console.error("No track name found on the element");
+            return;
+        }
+        
+        console.log(`Playing track: ${trackName}`);
+        
+        // Deactivate any currently playing tracks
         if (activeTrackItem) {
             deactivatePlayer(activeTrackItem);
         }
         
-        // Set this as the active track
+        // Set as the active track
         activeTrackItem = trackItemElement;
         
-        // Get the required elements
-        const playButton = trackItemElement.querySelector('.play-button');
-        if (playButton) {
-            playButton.disabled = true;
-            playButton.innerHTML = '<span class="loading-icon">⏳</span> Loading...';
-        }
-        
+        // Get player elements
         const playerContainer = trackItemElement.querySelector('.inline-player-container');
         const playerWrapper = trackItemElement.querySelector('.youtube-player-wrapper');
+        const playButton = trackItemElement.querySelector('.play-button');
         
         if (!playerContainer || !playerWrapper) {
-            console.error('Player container or wrapper not found');
+            console.error("Player container elements not found");
             return;
         }
         
-        // Make sure the DOM is fully prepared before proceeding
-        // Find or create the necessary control elements
-        const audioControls = playerContainer.querySelector('.audio-controls');
-        if (!audioControls) {
-            console.error('Audio controls not found');
-            return;
+        // Disable play button during loading
+        if (playButton) {
+            playButton.innerHTML = '<span class="loading-icon">⏳</span> Loading...';
+            playButton.disabled = true;
         }
         
-        let timeDisplay = audioControls.querySelector('.time-display');
-        let playPauseBtn = audioControls.querySelector('.play-pause-btn');
-        let youtubeLink = audioControls.querySelector('.youtube-link');
-        
-        // Show the player container
+        // Setup the player
         playerContainer.style.display = 'block';
         
-        // Search for a YouTube video related to the track
+        // Create a unique ID for the player instance
+        const playerId = 'player-' + Date.now();
+        playerWrapper.innerHTML = `<div id="${playerId}"></div>`;
+        
+        // Get a video for this track
         searchYouTubeVideo(trackName)
             .then(videoId => {
-                if (!videoId) {
-                    console.error('No video ID found for track:', trackName);
-                    deactivatePlayer(trackItemElement);
-                    return;
+                // Keep track of retry attempts for this player
+                if (!window.playerRetries) {
+                    window.playerRetries = {};
                 }
+                window.playerRetries[playerId] = 0;
                 
-                // Update YouTube link
-                if (youtubeLink) {
-                    youtubeLink.href = `https://www.youtube.com/watch?v=${videoId}`;
-                }
-                
-                // Reset UI controls
-                if (timeDisplay) timeDisplay.textContent = '0:00';
-                if (playPauseBtn) playPauseBtn.textContent = '⏸';
-                
-                console.log(`Creating player for video ID: ${videoId}`);
-                
-                // Create unique container ID
-                const containerId = `yt-player-${Date.now()}`;
-                playerWrapper.innerHTML = `<div id="${containerId}"></div>`;
-                
-                // Create the YouTube player
+                // Create player with error and ready handlers
                 currentPlayer = createPlayer(
-                    containerId,
+                    playerId, 
                     videoId,
-                    (event) => {
-                        // Player ready handler
-                        console.log('Player ready');
-                        if (playButton) {
-                            playButton.style.display = 'none';
+                    // On player ready
+                    function onPlayerReady(event) {
+                        console.log("Player ready, playing video");
+                        event.target.playVideo();
+                        
+                        // Update the play button to show playing state
+                        if(playButton) {
+                            playButton.innerHTML = '<span class="pause-icon">⏸</span> Playing';
+                            playButton.disabled = false;
                         }
                         
-                        // Make sure the video actually plays
-                        try {
-                            event.target.playVideo();
-                        } catch (e) {
-                            console.error('Error playing video:', e);
-                        }
-                        
-                        // Set up time update interval
+                        // Start the timer update
                         if (updateTimeInterval) clearInterval(updateTimeInterval);
-                        updateTimeInterval = setInterval(() => {
+                        updateTimeInterval = setInterval(function() {
                             if (currentPlayer && typeof currentPlayer.getCurrentTime === 'function') {
                                 try {
-                                    const currentTime = currentPlayer.getCurrentTime() || 0;
-                                    const duration = currentPlayer.getDuration() || 0;
-                                    
-                                    if (duration > 0 && timeDisplay) {
-                                        // Update time display if it exists
-                                        const currentTimeFormatted = formatTime(currentTime);
-                                        const durationFormatted = formatTime(duration);
-                                        timeDisplay.textContent = `${currentTimeFormatted} / ${durationFormatted}`;
+                                    const currentTime = currentPlayer.getCurrentTime();
+                                    const duration = currentPlayer.getDuration();
+                                    const timeDisplay = trackItemElement.querySelector('.time-display');
+                                    if (timeDisplay) {
+                                        timeDisplay.textContent = formatTime(currentTime) + ' / ' + formatTime(duration);
                                     }
-                                } catch (err) {
-                                    console.warn('Error updating time display:', err);
+                                } catch (e) {
+                                    console.error("Error updating time:", e);
                                 }
                             }
                         }, 1000);
                     },
-                    (event) => {
-                        // Player state change handler
-                        console.log('Player state change:', event.data);
-                        if (playPauseBtn) {
-                            try {
-                                if (event.data === YT.PlayerState.PLAYING) {
-                                    playPauseBtn.textContent = '⏸️';
-                                } else if (event.data === YT.PlayerState.PAUSED) {
-                                    playPauseBtn.textContent = '▶️';
-                                } else if (event.data === YT.PlayerState.ENDED) {
-                                    deactivatePlayer(trackItemElement);
-                                }
-                            } catch (err) {
-                                console.warn('Error updating player UI:', err);
-                            }
+                    // On player state change
+                    function onPlayerStateChange(event) {
+                        // Update UI based on player state
+                        if(event.data === YT.PlayerState.PAUSED) {
+                            if(playButton) playButton.innerHTML = '<span class="play-icon">▶</span> Resume';
+                        } else if(event.data === YT.PlayerState.PLAYING) {
+                            if(playButton) playButton.innerHTML = '<span class="pause-icon">⏸</span> Pause';
+                        } else if(event.data === YT.PlayerState.ENDED) {
+                            if(playButton) playButton.innerHTML = '<span class="replay-icon">🔄</span> Replay';
                         }
                     },
-                    (event) => {
-                        // Player error handler
-                        onPlayerError(event, playPauseBtn, timeDisplay, trackItemElement);
+                    // On player error
+                    function onPlayerError(event) {
+                        console.error(`Player error: ${event.data}`);
+                        
+                        // Increment retry counter
+                        const retryCount = (window.playerRetries[playerId] || 0) + 1;
+                        window.playerRetries[playerId] = retryCount;
+                        
+                        // Limit retries to 3
+                        if (retryCount <= 3) {
+                            console.log(`Retry attempt ${retryCount}/3`);
+                            
+                            // Destroy the current player
+                            if (currentPlayer) {
+                                try {
+                                    currentPlayer.destroy();
+                                } catch (e) {
+                                    console.error("Error destroying player:", e);
+                                }
+                                currentPlayer = null;
+                            }
+                            
+                            // Create a new player div
+                            const newPlayerId = 'player-retry-' + Date.now();
+                            playerWrapper.innerHTML = `<div id="${newPlayerId}"></div>`;
+                            
+                            // Search for a different video with retry indication
+                            searchYouTubeVideo(`${trackName}__retry_${retryCount}`)
+                                .then(newVideoId => {
+                                    console.log(`Retrying with video ID: ${newVideoId}`);
+                                    // Create a new player with the new video
+                                    currentPlayer = createPlayer(
+                                        newPlayerId,
+                                        newVideoId,
+                                        onPlayerReady,
+                                        onPlayerStateChange,
+                                        onPlayerError
+                                    );
+                                });
+                        } else {
+                            console.error("Max retry attempts reached");
+                            if(playButton) {
+                                playButton.innerHTML = '<span class="error-icon">❌</span> Failed to play';
+                                playButton.disabled = false;
+                            }
+                        }
                     }
                 );
             })
             .catch(error => {
-                console.error('Error creating player:', error);
-                deactivatePlayer(trackItemElement);
+                console.error(`Error setting up player: ${error}`);
+                if(playButton) {
+                    playButton.innerHTML = '<span class="error-icon">❌</span> Error';
+                    playButton.disabled = false;
+                }
             });
     }
     
@@ -661,52 +716,6 @@ document.addEventListener('DOMContentLoaded', function() {
         'KKVEZr1LL_s', 'BJNc9j4JzSo', 'Ml9cD75OfUU', '2lAe1cqCOXo', 'P83O-N3XrJc'
     ];
     
-    // Add error handling for the player
-    function onPlayerError(event, playPauseBtn, timeDisplay, trackItemElement) {
-        const errorCodes = {
-            2: 'Invalid video ID',
-            5: 'HTML5 player error',
-            100: 'Video not found or removed',
-            101: 'Video embedding not allowed',
-            150: 'Video embedding not allowed'
-        };
-        
-        const errorMessage = errorCodes[event.data] || `Unknown error (${event.data})`;
-        console.error(`Player error: ${errorMessage}`);
-        
-        if (timeDisplay) {
-            timeDisplay.textContent = 'Error';
-        }
-        if (playPauseBtn) {
-            playPauseBtn.textContent = '!'; // Error symbol
-        }
-        
-        // Try a different video immediately for any error
-        if (activeTrackItem) {
-            const trackBtn = activeTrackItem.querySelector('.play-button');
-            if (trackBtn) {
-                const trackName = decodeURIComponent(trackBtn.dataset.track);
-                
-                // Clear this track from cache so we get a different video next time
-                if (window.videoCache) {
-                    delete window.videoCache[trackName];
-                }
-                
-                // Mark as retry attempt to get a different video
-                const retryTrackName = trackName + "__retry_" + Date.now();
-                trackBtn.dataset.track = encodeURIComponent(retryTrackName);
-                
-                // Try to play a different video immediately
-                setTimeout(() => {
-                    if (activeTrackItem) {
-                        console.log("Retrying with a different video after error");
-                        playTrack(retryTrackName, activeTrackItem);
-                    }
-                }, 250);
-            }
-        }
-    }
-    
     // Get a truly reliable video ID that's guaranteed to work
     function getReliableVideoId(index) {
         // These videos are absolutely guaranteed to work with embedding
@@ -719,63 +728,66 @@ document.addEventListener('DOMContentLoaded', function() {
         return reliableVideos[index % reliableVideos.length];
     }
     
-    // Search YouTube for a video related to the track
-    function searchYouTubeVideo(trackName, retryAttempt = false) {
-        return new Promise((resolve) => {
+    // Search YouTube for the exact track - simplified approach
+    function searchYouTubeVideo(trackName) {
+        return new Promise((resolve, reject) => {
             // Initialize video cache if not exists
             if (!window.videoCache) {
                 window.videoCache = {};
             }
             
-            // Check if we have a cached video ID for this track
-            if (window.videoCache[trackName] && !retryAttempt) {
-                console.log(`Using cached video ID for track ${trackName}`);
-                resolve(window.videoCache[trackName]);
-                return;
-            }
-            
-            // If this is a retry, we need to pick a new video
+            // Clean the track name for retry attempts
             const isRetry = trackName.includes("__retry_");
             const cleanTrackName = isRetry ? trackName.split("__retry_")[0] : trackName;
             
-            // Parse the artist and track name
-            let artistName = "";
-            let songTitle = cleanTrackName;
-            
-            if (cleanTrackName.includes(" - ")) {
-                const parts = cleanTrackName.split(" - ");
-                artistName = parts[0].trim();
-                songTitle = parts.slice(1).join(" - ").trim();
+            // Check if we have a cached video ID for this track (but not for retries)
+            if (!isRetry && window.videoCache[cleanTrackName]) {
+                console.log(`Using cached video ID for track: ${cleanTrackName}`);
+                resolve(window.videoCache[cleanTrackName]);
+                return;
             }
             
-            // Generate hashes for artist and track
-            const artistHash = Math.abs(generateQuickHash(artistName || songTitle));
-            const trackHash = Math.abs(generateQuickHash(songTitle));
-            
-            // Select a video from our embeddable list
-            let index;
-            let videoId;
-            
+            // For retry attempts, use a reliable video
             if (isRetry) {
-                // For retries, just use one of the absolutely guaranteed working videos
-                // Count number of retries from the timestamp in the track name
-                const retryCount = isRetry ? parseInt(trackName.split("__retry_")[1], 10) % 10 : 0;
-                videoId = getReliableVideoId(retryCount);
-                console.log(`Using ultra-reliable video ID ${videoId} for retry`);
-            } else {
-                // Normal selection based on hashes
-                index = (artistHash + trackHash) % EMBEDDABLE_VIDEOS.length;
-                videoId = EMBEDDABLE_VIDEOS[index];
+                // Get retry count from the name
+                const retryCount = parseInt(trackName.match(/__retry_(\d+)/)?.[1] || "0");
+                const videoId = getReliableVideoId(retryCount % 3);
+                console.log(`Retry attempt #${retryCount}, using reliable video: ${videoId}`);
+                resolve(videoId);
+                return;
             }
             
-            console.log(`Selected video ${videoId} for track ${cleanTrackName} (${isRetry ? 'retry' : 'first attempt'})`);
+            // Search for the track on YouTube using the server-side endpoint
+            const searchQuery = `${cleanTrackName} official audio`;
+            console.log(`Searching for video: ${searchQuery}`);
             
-            // Cache the result unless it's a retry
-            if (!isRetry) {
-                window.videoCache[trackName] = videoId;
-            }
-            
-            resolve(videoId);
+            fetch(`/search_video?query=${encodeURIComponent(searchQuery)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Search video failed with status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    const videoId = data.videoId;
+                    console.log(`Found video ID: ${videoId} for track: ${cleanTrackName}`);
+                    
+                    // Cache the result
+                    window.videoCache[cleanTrackName] = videoId;
+                    
+                    resolve(videoId);
+                })
+                .catch(error => {
+                    console.error(`Error searching for video: ${error.message}`);
+                    // If search fails, use a reliable fallback video
+                    const fallbackId = getReliableVideoId(Math.floor(Math.random() * 3));
+                    console.log(`Using fallback video: ${fallbackId}`);
+                    resolve(fallbackId);
+                });
         });
     }
     
@@ -805,55 +817,62 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log(`Creating YouTube player for ${containerId} with video ${videoId}`);
         
         try {
-            // Create a player with the most reliable settings possible
+            // Create a VERY simple player with minimal settings to ensure it works
             return new YT.Player(containerId, {
                 height: '1',
                 width: '1',
                 videoId: videoId,
                 playerVars: {
-                    // Critical settings that increase success rate
+                    // Absolute minimum settings needed for audio playback
                     'autoplay': 1,
-                    'controls': 0,
-                    'mute': 0,  // Unmuted for audio playback
-                    'playsinline': 1,
-                    'modestbranding': 1,
-                    'rel': 0,
-                    'showinfo': 0,
-                    'enablejsapi': 1,
-                    'origin': window.location.origin,
-                    // Simplify the player as much as possible 
-                    'disablekb': 1,
-                    'iv_load_policy': 3,
-                    'fs': 0,
-                    'cc_load_policy': 0
+                    'rel': 0
                 },
                 events: {
                     'onReady': function(event) {
-                        console.log('Player ready - explicitly playing');
-                        // Ensure video plays when ready
-                        event.target.playVideo();
+                        console.log('Player ready');
                         
                         // Call the provided callback
                         if (typeof onReady === 'function') {
-                            onReady(event);
-                        }
-                        
-                        // Fallback if autoplay fails
-                        setTimeout(function() {
-                            if (event.target.getPlayerState() !== YT.PlayerState.PLAYING) {
-                                console.log('Autoplay may have failed - trying explicit play');
-                                event.target.playVideo();
+                            try {
+                                onReady(event);
+                            } catch(e) {
+                                console.error('Error in onReady callback:', e);
                             }
-                        }, 1000);
+                        }
                     },
-                    'onStateChange': onStateChange,
-                    'onError': onError
+                    'onStateChange': function(event) {
+                        // Safely call the state change handler
+                        if (typeof onStateChange === 'function') {
+                            try {
+                                onStateChange(event);
+                            } catch(e) {
+                                console.error('Error in onStateChange callback:', e);
+                            }
+                        }
+                    },
+                    'onError': function(event) {
+                        console.error('YouTube player error:', event.data);
+                        // Safely call the error handler
+                        if (typeof onError === 'function') {
+                            try {
+                                onError(event);
+                            } catch(e) {
+                                console.error('Error in onError callback:', e);
+                            }
+                        }
+                    }
                 }
             });
         } catch (error) {
             console.error('Error creating YouTube player:', error);
-            // Use a fallback approach if needed
-            onError({ data: 0 });
+            // Try to notify about the error
+            if (typeof onError === 'function') {
+                try {
+                    onError({ data: 0 });
+                } catch(e) {
+                    console.error('Error in error callback:', e);
+                }
+            }
             return null;
         }
     }
@@ -907,7 +926,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const item = trackQueue[index];
         console.log(`Play All: Playing track ${index + 1}/${trackQueue.length}: ${item.trackName}`);
-        playTrack(item.trackName, item.trackItem);
+        playTrack(item.trackItem);
         
         // Set timeout to automatically skip to the next track after TRACK_PLAY_DURATION
         // Clear any existing timeout first
@@ -936,4 +955,4 @@ document.addEventListener('DOMContentLoaded', function() {
     // The dynamic content listeners are called after results are rendered.
 });
 </script>
-{% endblock %} 
+{% endblock %}
