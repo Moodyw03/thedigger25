@@ -308,27 +308,53 @@ def generate_pdf_background(artist_name):
 def generate_pdf(artist_name, mixes, job=None):
     """Generate a PDF document with all tracklists for an artist."""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, title=f"Tracklists for {artist_name}", author="The Digger App")
+    
+    # Use a different approach to handle large documents without losing content
+    from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame
+    from reportlab.lib.pagesizes import letter
+    
+    # Create a BaseDocTemplate instead of SimpleDocTemplate
+    doc = BaseDocTemplate(
+        buffer, 
+        pagesize=letter,
+        title=f"Tracklists for {artist_name}",
+        author="The Digger App"
+    )
+    
+    # Create a frame for the content and add it to a page template
+    frame = Frame(
+        doc.leftMargin, 
+        doc.bottomMargin, 
+        doc.width, 
+        doc.height,
+        id='normal'
+    )
+    template = PageTemplate(id='all_frames', frames=frame, onPage=add_page_number)
+    doc.addPageTemplates([template])
+    
+    # Add styles for PDF content
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name='MixTitle', parent=styles['Heading2'], spaceAfter=12))
     styles.add(ParagraphStyle(name='TrackItem', parent=styles['Normal'], leftIndent=20, spaceAfter=3))
-    content = []
     
-    # Create PDF content in batches to improve performance
+    # Store all content in a single list that will be built once at the end
+    all_content = []
+    
+    # Create PDF title and header information
     title = Paragraph(f"Tracklists for {artist_name}", styles['Title'])
-    content.append(title)
-    content.append(Spacer(1, 0.25 * inch))
+    all_content.append(title)
+    all_content.append(Spacer(1, 0.25 * inch))
     
     # Calculate stats once to avoid repeated calculations
     mixes_with_tracklists = sum(1 for mix in mixes if mix.get("has_tracklist", False))
     total_tracks = sum(len(mix.get("tracks", [])) for mix in mixes)
     
     summary = Paragraph(f"Found {total_tracks} tracks across {mixes_with_tracklists} mixes with tracklists (total of {len(mixes)} mixes)", styles['Normal'])
-    content.append(summary)
-    content.append(Spacer(1, 0.25 * inch))
+    all_content.append(summary)
+    all_content.append(Spacer(1, 0.25 * inch))
     generated = Paragraph(f"Generated on {datetime.datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}", styles['Italic'])
-    content.append(generated)
-    content.append(Spacer(1, 0.5 * inch))
+    all_content.append(generated)
+    all_content.append(Spacer(1, 0.5 * inch))
     
     # Update progress at the start of PDF generation
     if job:
@@ -340,12 +366,12 @@ def generate_pdf(artist_name, mixes, job=None):
     progress_increment = 60 / max(len(mixes), 1)  # 35% to 95%
     current_progress = 35
     
-    # Process each mix
+    # Process each mix and add to all_content
     for i, mix in enumerate(mixes):
         title_text = mix.get("title", "Untitled Mix")
         if mix.get("date"):
             title_text = f"{mix.get('date')} - {title_text}"
-        content.append(Paragraph(title_text, styles['MixTitle']))
+        all_content.append(Paragraph(title_text, styles['MixTitle']))
         
         # Update progress and status periodically
         if job and i % max(1, len(mixes) // 10) == 0:  # Update every ~10% of mixes
@@ -357,28 +383,14 @@ def generate_pdf(artist_name, mixes, job=None):
         
         tracks = mix.get("tracks", [])
         if tracks:
-            # Process tracks in chunks for better memory handling
-            for i, track in enumerate(tracks):
-                track_text = f"{i + 1}. {format_track_for_pdf(track)}"
-                content.append(Paragraph(track_text, styles['TrackItem']))
-                
-                # Build the document in chunks if it gets very large
-                # Reduced chunk size for very large catalogs
-                chunk_threshold = 300 if len(mixes) > 200 else 500
-                if len(content) > chunk_threshold:
-                    logger.info(f"Building PDF document chunk with {len(content)} elements")
-                    doc.build(content, canvasmaker=NumberedCanvas)
-                    content = []  # Reset content for next chunk
+            # Process all tracks for this mix
+            for j, track in enumerate(tracks):
+                track_text = f"{j + 1}. {format_track_for_pdf(track)}"
+                all_content.append(Paragraph(track_text, styles['TrackItem']))
         else:
-            content.append(Paragraph("No tracklist available", styles['TrackItem']))
+            all_content.append(Paragraph("No tracklist available", styles['TrackItem']))
         
-        content.append(Spacer(1, 0.1 * inch))
-        
-        # Generate PDF in chunks after each mix for very large catalogs
-        if len(mixes) > 300 and len(content) > 100:
-            logger.info(f"Building PDF document chunk after mix with {len(content)} elements")
-            doc.build(content, canvasmaker=NumberedCanvas)
-            content = []  # Reset content for next chunk
+        all_content.append(Spacer(1, 0.2 * inch))
     
     # Final progress update before building the document
     if job:
@@ -387,9 +399,10 @@ def generate_pdf(artist_name, mixes, job=None):
         job.save_meta()
     
     try:
-        # Build final document with any remaining content
-        if content:
-            doc.build(content)
+        # Build the document once with all content
+        doc.build(all_content)
+        
+        logger.info(f"Successfully built PDF with {total_tracks} tracks across {len(mixes)} mixes")
     except Exception as build_error:
         logger.error(f"Error building PDF content: {build_error}")
         raise # Re-raise the error after logging
@@ -398,31 +411,18 @@ def generate_pdf(artist_name, mixes, job=None):
     buffer.close()
     return pdf_data
 
-# Custom canvas for PDF generation with page numbers
-class NumberedCanvas(canvas.Canvas):
-    def __init__(self, *args, **kwargs):
-        canvas.Canvas.__init__(self, *args, **kwargs)
-        self._saved_page_states = []
-
-    def showPage(self):
-        self._saved_page_states.append(dict(self.__dict__))
-        self._startPage()
-
-    def save(self):
-        """Add page numbers to each page"""
-        num_pages = len(self._saved_page_states)
-        for state in self._saved_page_states:
-            self.__dict__.update(state)
-            self.draw_page_number(num_pages)
-            canvas.Canvas.showPage(self)
-        canvas.Canvas.save(self)
-
-    def draw_page_number(self, page_count):
-        # Add page numbers at the bottom of each page
-        self.setFont("Helvetica", 8)
-        self.drawRightString(
-            letter[0] - 24, 24, f"Page {self._pageNumber} of {page_count}"
-        )
+# Function to add page numbers to PDF pages
+def add_page_number(canvas, doc):
+    """Add page number to each page of the PDF"""
+    canvas.saveState()
+    canvas.setFont("Helvetica", 8)
+    page_num = canvas.getPageNumber()
+    canvas.drawRightString(
+        letter[0] - 24, 
+        24, 
+        f"Page {page_num} of {doc.page}"
+    )
+    canvas.restoreState()
 
 # Original /search route is removed as it's replaced by the job submission logic.
 # Original /api/list might still be useful if you want synchronous access,
