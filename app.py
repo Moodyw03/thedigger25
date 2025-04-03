@@ -567,6 +567,17 @@ def audio_proxy():
     if not video_id:
         return jsonify({"error": "Video ID is required"}), 400
     
+    # Check cache first
+    cache_key = f"audio_proxy_{video_id}"
+    current_time = time.time()
+    
+    if cache_key in video_id_cache:
+        cached_item = video_id_cache[cache_key]
+        # If the cache hasn't expired
+        if current_time - cached_item["timestamp"] < CACHE_EXPIRY:
+            logger.info(f"Cache hit for audio proxy: {video_id}")
+            return jsonify(cached_item["data"])
+    
     try:
         # Use yt-dlp to extract YouTube video information
         import yt_dlp as youtube_dl
@@ -579,15 +590,34 @@ def audio_proxy():
             'no_warnings': True,
             'extract_flat': False,
             'skip_download': True,
+            # Add additional options to improve extraction reliability
+            'socket_timeout': 15,
+            'retries': 3,
+            'ignoreerrors': True,
+            'geo_bypass': True,
+            'nocheckcertificate': True,
         }
         
         with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             # Extract information without downloading
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
             
+            if not info:
+                return jsonify({"error": "Could not extract video information"}), 404
+            
             # Get the best audio format URL
             formats = info.get('formats', [])
+            
+            # First try to find audio-only formats (more efficient)
             audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
+            
+            # Prepare response data
+            result_data = {
+                "success": True,
+                "title": info.get('title', ''),
+                "duration": info.get('duration', 0),
+                "uploader": info.get('uploader', '')
+            }
             
             if audio_formats:
                 # Sort by quality (typically bitrate)
@@ -595,25 +625,32 @@ def audio_proxy():
                 best_audio = audio_formats[0]
                 audio_url = best_audio['url']
                 
-                # Return just the direct audio URL
-                return jsonify({
-                    "success": True,
+                # Add format info to response
+                result_data.update({
                     "audio_url": audio_url,
-                    "title": info.get('title', ''),
-                    "duration": info.get('duration', 0)
+                    "format": best_audio.get('format_note', 'unknown'),
+                    "bitrate": best_audio.get('abr', 0)
                 })
             else:
-                # Fall back to any format with audio
+                # Fall back to any format with audio if no audio-only formats
                 for format in formats:
                     if format.get('acodec') != 'none':
-                        return jsonify({
-                            "success": True,
+                        result_data.update({
                             "audio_url": format['url'],
-                            "title": info.get('title', ''),
-                            "duration": info.get('duration', 0)
+                            "format": format.get('format_note', 'unknown'),
+                            "is_video": True
                         })
-                
-                return jsonify({"error": "No suitable audio format found"}), 404
+                        break
+                else:
+                    return jsonify({"error": "No suitable audio format found"}), 404
+            
+            # Cache the result
+            video_id_cache[cache_key] = {
+                "data": result_data,
+                "timestamp": current_time
+            }
+            
+            return jsonify(result_data)
                 
     except Exception as e:
         logger.error(f"Error proxying YouTube audio: {str(e)}")

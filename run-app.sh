@@ -32,21 +32,26 @@ export FLASK_APP=app.py # Tell Flask where the app is
 
 echo -e "${BLUE}Starting The Digger application...${NC}"
 
-# Kill any existing Digger processes
+# Kill any existing processes
 echo -e "${YELLOW}Checking for existing processes...${NC}"
-ps aux | grep '[p]ython.*digger.py' | awk '{print $2}' | xargs -I{} echo "Killing process: {}"
-ps aux | grep '[p]ython.*digger.py' | awk '{print $2}' | xargs -I{} kill {} 2>/dev/null
+ps aux | grep '[p]ython.*app.py' | awk '{print $2}' | xargs -I{} echo "Killing process: {}"
+ps aux | grep '[p]ython.*app.py' | awk '{print $2}' | xargs -I{} kill {} 2>/dev/null
 sleep 1
 
-# Activate virtual environment
-source venv/bin/activate
+# Activate virtual environment if it exists
+if [ -d "venv" ]; then
+  echo -e "${BLUE}Activating virtual environment...${NC}"
+  source venv/bin/activate
+else
+  echo -e "${YELLOW}Virtual environment not found. Creating one...${NC}"
+  python -m venv venv
+  source venv/bin/activate
+  echo -e "${GREEN}Virtual environment created and activated${NC}"
+fi
 
 # Install/update dependencies
 echo -e "${BLUE}Installing/updating dependencies from requirements.txt...${NC}"
 pip install -r requirements.txt
-
-# Make digger.py executable
-# chmod +x digger.py # No longer needed as entry point
 
 echo -e "${GREEN}Starting the server on port ${PORT}...${NC}"
 echo -e "${YELLOW}Open your browser to: http://localhost:${PORT}${NC}"

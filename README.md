@@ -14,6 +14,30 @@ A tool for finding and listening to tracks played by your favorite DJs on MixesD
 - Automatic rate limiting to prevent being blocked
 - Background job processing for handling heavy operations
 
+## 🔄 New Features and Improvements
+
+### 🔉 YouTube Audio Proxy
+
+The application now includes a YouTube audio proxy feature that allows playback of tracks that have embedding restrictions. When a track can't be embedded in the player, the app will automatically try to extract the audio directly.
+
+### 📋 Combined Setup Process
+
+The setup process has been simplified with a single script that works for both development and production environments:
+
+```bash
+# For development setup
+./setup.sh
+
+# For production setup
+./setup.sh -p
+```
+
+### 🚀 Deployment Improvements
+
+- Worker process now uses worker.py which is compatible with the Procfile
+- Fixed cache management to improve performance with large track lists
+- PDF generation has been improved to properly include all tracks
+
 ## Running the App
 
 ### Quick Start

@@ -876,16 +876,20 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
     
-    // Helper function to display player errors
+    // Helper function to display player errors and info messages
     function showPlayerError(errorElement, message, isSuccess = false) {
         if (!errorElement) return;
         
         if (isSuccess) {
             errorElement.innerHTML = `<span class="player-success-icon">✅</span> ${message}`;
+            errorElement.style.color = '#007700';
         } else {
             errorElement.innerHTML = `<span class="player-error-icon">⚠️</span> ${message}`;
+            errorElement.style.color = '#cc0000';
         }
         errorElement.style.display = 'block';
+        errorElement.style.fontSize = '12px';
+        errorElement.style.padding = '5px 0';
     }
 
     // Clear player error display
