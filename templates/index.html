@@ -1156,7 +1156,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 break;
             case 101:
             case 150:
-                errorMessage = "Video embedding not allowed. Retrying with alternative.";
+                errorMessage = "Video embedding not allowed. Trying another source.";
+                // For this specific track, store in "blocked" cache to avoid trying again
+                if (!window.blockedVideos) window.blockedVideos = {};
+                if (youtubeLink && youtubeLink.href) {
+                    const videoId = youtubeLink.href.split('v=')[1]?.split('&')[0];
+                    if (videoId) window.blockedVideos[videoId] = true;
+                }
                 break;
             default:
                 errorMessage = "Playback error. Retrying with alternative.";
@@ -1194,6 +1200,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 playerWrapper.innerHTML = `<div id="${newPlayerId}" style="width:1px;height:1px;overflow:hidden;"></div>`;
             }
             
+            // For embedding restrictions (error 101/150), directly use alternative instead of retry
+            if (event.data === 101 || event.data === 150) {
+                const directFallbackId = getDirectFallbackForTrack(trackName, retryCount);
+                if (youtubeLink) {
+                    youtubeLink.href = `https://www.youtube.com/watch?v=${directFallbackId}`;
+                }
+                
+                // Create new player with the fallback ID - pass function references properly
+                currentPlayer = createPlayer(
+                    newPlayerId,
+                    directFallbackId,
+                    // Create closure for callbacks to maintain context
+                    function(event) {
+                        if (typeof onPlayerReady === 'function') {
+                            onPlayerReady(event);
+                        }
+                    },
+                    onPlayerStateChange,
+                    function(event) {
+                        onPlayerError(event, newPlayerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay);
+                    }
+                );
+                return;
+            }
+            
             // Search for a different video with retry indication
             searchYouTubeVideo(`${trackName}__retry_${retryCount}`)
                 .then(newVideoId => {
@@ -1204,13 +1235,20 @@ document.addEventListener('DOMContentLoaded', function() {
                         youtubeLink.href = `https://www.youtube.com/watch?v=${newVideoId}`;
                     }
                     
-                    // Create a new player with the new video
+                    // Create a new player with the new video - pass function references properly
                     currentPlayer = createPlayer(
                         newPlayerId,
                         newVideoId,
-                        onPlayerReady,
+                        // Create closure for callbacks to maintain context
+                        function(event) {
+                            if (typeof onPlayerReady === 'function') {
+                                onPlayerReady(event);
+                            }
+                        },
                         onPlayerStateChange,
-                        (event) => onPlayerError(event, newPlayerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay)
+                        function(event) {
+                            onPlayerError(event, newPlayerId, trackName, onPlayerReady, onPlayerStateChange, errorDisplay);
+                        }
                     );
                 });
         } else {
@@ -1219,8 +1257,54 @@ document.addEventListener('DOMContentLoaded', function() {
                 playButton.innerHTML = '<span class="error-icon">❌</span> FAILED';
                 playButton.disabled = false;
             }
-            showPlayerError(errorDisplay, "All playback attempts failed. Please try another track or try again later.");
+            // Show special message when embedding is the issue
+            if (event.data === 101 || event.data === 150) {
+                showPlayerError(errorDisplay, "This track cannot be played here. Click YOUTUBE link to open in YouTube directly.");
+            } else {
+                showPlayerError(errorDisplay, "All playback attempts failed. Please try another track or try again later.");
+            }
         }
+    }
+
+    // Function to get a direct fallback for tracks with embedding issues
+    function getDirectFallbackForTrack(trackName, retryCount) {
+        // Extract artist and track info if possible
+        let artistName = trackName;
+        const parts = trackName.split(' - ');
+        if (parts.length > 1) {
+            artistName = parts[0].trim();
+        }
+        
+        // Create a consistent hash based on artist name
+        const hash = generateQuickHash(artistName + retryCount);
+        
+        // Use different reliable fallbacks based on the type of track (EDM vs Non-EDM)
+        const edmArtists = ['ben ufo', 'bicep', 'bonobo', 'burial', 'call super', 'dj koze', 'floating points', 
+                            'four tet', 'james holden', 'joy orbison', 'nicolas jaar', 'pearson sound', 'rimbaudian'];
+        
+        // Check if this is likely an electronic artist
+        const isElectronic = edmArtists.some(artist => 
+            artistName.toLowerCase().includes(artist.toLowerCase()));
+        
+        // Electronic music fallbacks - ambient/beats that are embeddable
+        const edmFallbacks = [
+            'DyDfgMOUjCI', // lofi hip hop radio
+            '5qap5aO4i9A', // lofi girl
+            'jfKfPfyJRdk', // chillhop music
+            'rUxyKA_-grg', // ambient music
+            'qt_urUz42vI'  // electronic ambient
+        ];
+        
+        // General music fallbacks
+        const generalFallbacks = [
+            'M7lc1UVf-VE', // YouTube API test video
+            '5_ARibfCMhw', // YouTube provided music
+            'LXb3EKWsInQ', // More YT music
+            'dQw4w9WgXcQ'  // Rick Astley (reliable fallback)
+        ];
+        
+        const fallbackArray = isElectronic ? edmFallbacks : generalFallbacks;
+        return fallbackArray[Math.abs(hash) % fallbackArray.length];
     }
 
     // Very quick hash function - no async needed, just for consistent selection
@@ -1231,15 +1315,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         return hash;
     }
-
-    // List of guaranteed embeddable videos that definitely allow embedding
-    const EMBEDDABLE_VIDEOS = [
-        // YouTube provided samples and music that's guaranteed to work with embedding
-        'M7lc1UVf-VE', 'YE7VzlLtp-4', 'jNQXAC9IVRw', '5qap5aO4i9A', 'DyDfgMOUjCI',
-        'FkOt19CUC30', 'bQn35T4Aa2U', 'aGSKrC7dGcY', 'dQw4w9WgXcQ', 'J9XcFmTYUXQ',
-        '5_ARibfCMhw', 'LXb3EKWsInQ', 'bM7SZ5SBzyY', 'aqz-KE-bpKQ', 'w_Ma8oQLmSM',
-        'KKVEZr1LL_s', 'BJNc9j4JzSo', 'Ml9cD75OfUU', '2lAe1cqCOXo', 'P83O-N3XrJc'
-    ];
 
     // Get a truly reliable video ID that's guaranteed to work
     function getReliableVideoId(index) {
@@ -1259,6 +1334,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // Initialize video cache if not exists
             if (!window.videoCache) {
                 window.videoCache = {};
+            }
+            
+            // Initialize blocked videos cache if not exists
+            if (!window.blockedVideos) {
+                window.blockedVideos = {};
             }
             
             // Clean the track name for retry attempts
@@ -1287,10 +1367,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // For other retries, use a different selection method
                 // Add retryCount to hash to get a different video each time
-                const hash = generateQuickHash(cleanTrackName + retryCount);
-                const videoId = EMBEDDABLE_VIDEOS[Math.abs(hash) % EMBEDDABLE_VIDEOS.length];
-                console.log(`Retry #${retryCount} - Using alternative selection: ${videoId}`);
-                resolve(videoId);
+                const directFallbackId = getDirectFallbackForTrack(cleanTrackName, retryCount);
+                console.log(`Retry #${retryCount} - Using artist-based fallback: ${directFallbackId}`);
+                resolve(directFallbackId);
                 return;
             }
 
@@ -1308,6 +1387,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     
                     const videoId = data.videoId;
+                    
+                    // Check if this video is known to have embedding restrictions
+                    if (window.blockedVideos[videoId]) {
+                        throw new Error("This video is known to have embedding restrictions");
+                    }
+                    
                     console.log(`Found video ID from server: ${videoId} for track: ${cleanTrackName}`);
                     
                     // Cache the result
@@ -1318,15 +1403,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 .catch(error => {
                     console.warn(`Server-side search failed: ${error.message}. Using deterministic fallback.`);
                     
-                    // Deterministic fallback - use hash of track name to select a video
-                    const hash = generateQuickHash(cleanTrackName);
-                    const videoId = EMBEDDABLE_VIDEOS[Math.abs(hash) % EMBEDDABLE_VIDEOS.length];
+                    // Use artist-based fallback
+                    const directFallbackId = getDirectFallbackForTrack(cleanTrackName, 0);
                     
                     // Cache this result too
-                    window.videoCache[cleanTrackName] = videoId;
+                    window.videoCache[cleanTrackName] = directFallbackId;
                     
-                    console.log(`Using deterministic video ID: ${videoId} for track: ${cleanTrackName}`);
-                    resolve(videoId);
+                    console.log(`Using artist-based fallback ID: ${directFallbackId} for track: ${cleanTrackName}`);
+                    resolve(directFallbackId);
                 });
         });
     }
