@@ -42,7 +42,14 @@ CORS(app)
 # Get Redis URL from environment (provided by Railway)
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
 try:
-    redis_conn = redis_from_url(redis_url)
+    # Create Redis connection with longer timeouts to prevent connection issues during long operations
+    redis_conn = redis_from_url(
+        redis_url,
+        socket_timeout=90,         # Increase from default 5 seconds
+        socket_connect_timeout=30,  # Increase connection timeout
+        socket_keepalive=True,      # Keep connections alive
+        health_check_interval=30    # Check health periodically
+    )
     # Test connection
     redis_conn.ping()
     logger.info(f"Successfully connected to Redis at {redis_url}")
@@ -53,9 +60,12 @@ except Exception as e:
     redis_conn = None
 
 if redis_conn:
-    # Use the 'default' queue
-    q = Queue(connection=redis_conn)
-    logger.info("RQ Queue initialized.")
+    # Use the 'default' queue with increased timeout for long-running jobs
+    q = Queue(
+        connection=redis_conn,
+        default_timeout=1800  # 30 minutes default timeout for long lists
+    )
+    logger.info("RQ Queue initialized with 30-minute timeout.")
 else:
     q = None
     logger.warning("RQ Queue not initialized due to Redis connection failure.")
@@ -83,9 +93,13 @@ def start_search_job():
         logger.info(f"Enqueuing search job for artist: {artist_name}")
         
         # Enqueue the scraper.main function with the artist name.
-        # Pass the function itself, or its string path if needed.
-        # Use job_timeout to prevent jobs from running indefinitely
-        job = q.enqueue('main.main', artist_name, job_timeout=900) # Timeout after 15 mins
+        # Increase timeout for large artist catalogs
+        job = q.enqueue(
+            'main.main', 
+            artist_name, 
+            job_timeout=1800,     # 30 minutes timeout for large catalogs
+            result_ttl=86400      # Keep results for 24 hours
+        )
         
         logger.info(f"Job enqueued with ID: {job.id}")
         # Return the job ID to the client
@@ -179,9 +193,13 @@ def start_pdf_job():
     try:
         logger.info(f"Enqueuing PDF generation job for artist: {artist_name}")
         
-        # Enqueue PDF generation as a background job
-        # First, fetch the data, then generate the PDF
-        job = q.enqueue('app.generate_pdf_background', artist_name, job_timeout=3600)  # 60 minutes timeout
+        # Enqueue PDF generation as a background job with longer timeout
+        job = q.enqueue(
+            'app.generate_pdf_background', 
+            artist_name, 
+            job_timeout=3600,     # 60 minutes timeout
+            result_ttl=86400      # Keep results for 24 hours
+        )
         
         logger.info(f"PDF job enqueued with ID: {job.id}")
         return jsonify({"job_id": job.id})

@@ -16,15 +16,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Request configuration
-REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 10))  # Reduced from 20 to 10 seconds
-MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 3))  # Number of retry attempts
-RETRY_DELAY = int(os.environ.get("RETRY_DELAY", 1))  # Reduced from 2 to 1 second
+REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 30))  # Increased from 10 to 30 seconds
+MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 5))  # Increased from 3 to 5 retries
+RETRY_DELAY = int(os.environ.get("RETRY_DELAY", 2))  # Increased from 1 to 2 seconds
 # Default maximum number of pages to fetch 
-MAX_FETCH_LIMIT = int(os.environ.get("MAX_FETCH_LIMIT", 200))  # Reduced from 300 to 200
+MAX_FETCH_LIMIT = int(os.environ.get("MAX_FETCH_LIMIT", 300))  # Increased from 200 to 300
 # Default maximum number of pagination pages to fetch
-MAX_PAGINATION_PAGES = int(os.environ.get("MAX_PAGINATION_PAGES", 5))  # Reduced from 10 to 5
+MAX_PAGINATION_PAGES = int(os.environ.get("MAX_PAGINATION_PAGES", 8))  # Increased from 5 to 8
 # Rate limiting - requests per minute
-RATE_LIMIT_RPM = int(os.environ.get("RATE_LIMIT_RPM", 45))  # Increased from 30 to 45
+RATE_LIMIT_RPM = int(os.environ.get("RATE_LIMIT_RPM", 30))  # Adjusted for stability
 # Minimum delay between requests in seconds
 MIN_REQUEST_DELAY = 60.0 / RATE_LIMIT_RPM  # Convert RPM to seconds
 
