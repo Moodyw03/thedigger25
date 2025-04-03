@@ -451,14 +451,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             `;
 
-            const mixActions = document.createElement('div');
-            mixActions.className = 'mix-actions';
-            if (mix.url) {
-                mixActions.innerHTML = `<a href="${escapeHtml(mix.url)}" class="mix-link" target="_blank">View on MixesDB</a>`;
-            }
-
             mixSection.appendChild(mixHeader);
-            mixSection.appendChild(mixActions);
 
             if (mix.has_tracklist && mix.tracks) {
                 const tracklistContainer = document.createElement('div');
