@@ -618,24 +618,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Setup event listeners for any existing play buttons
         setupPlayButtons(document);
-        
-        // Handle play button clicks
-        document.querySelectorAll('.play-button').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.preventDefault();
-                
-                // Get the track name and set it as an attribute on the track-item element
-                const trackName = decodeURIComponent(this.dataset.track);
-                const trackItem = this.closest('.track-item');
-                
-                // Set data-trackname attribute on the track-item
-                if (trackItem && trackName) {
-                    trackItem.setAttribute('data-trackname', trackName);
-                }
-                
-                playTrack(trackItem);
-            });
-        });
     };
 
     // Function to set up play button events on dynamically added elements
@@ -649,16 +631,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 button.addEventListener('click', function(e) {
                     e.preventDefault();
                     
-                    // Get the track name and set it as an attribute on the track-item element
-                    const trackName = decodeURIComponent(this.dataset.track);
+                    // Get the track item element
                     const trackItem = this.closest('.track-item');
+                    if (!trackItem) return;
                     
-                    // Set data-trackname attribute on the track-item
-                    if (trackItem && trackName) {
-                        trackItem.setAttribute('data-trackname', trackName);
+                    // Check if this is already playing
+                    if (trackItem.classList.contains('now-playing') && currentPlayer) {
+                        // This track is currently playing - toggle play/pause
+                        const playerState = currentPlayer.getPlayerState();
+                        
+                        if (playerState === YT.PlayerState.PLAYING) {
+                            // Pause the track
+                            currentPlayer.pauseVideo();
+                            this.innerHTML = '<span class="play-icon">▶</span> RESUME';
+                        } else if (playerState === YT.PlayerState.PAUSED || playerState === YT.PlayerState.ENDED) {
+                            // Resume/replay the track
+                            currentPlayer.playVideo();
+                            this.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
+                        }
+                    } else {
+                        // New track - play it
+                        // Get the track name and set it as an attribute on the track-item element
+                        const trackName = decodeURIComponent(this.dataset.track);
+                        
+                        // Set data-trackname attribute on the track-item
+                        if (trackName) {
+                            trackItem.setAttribute('data-trackname', trackName);
+                        }
+                        
+                        // Play the track
+                        playTrack(trackItem);
                     }
-                    
-                    playTrack(trackItem);
                 });
             }
         });
@@ -764,7 +767,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 currentPlayer = createPlayer(
                     playerId, 
                     videoId,
-                    // On player ready
                     function onPlayerReady(event) {
                         console.log("Player ready, playing video");
                         try {
@@ -775,7 +777,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         // Update the play button to show playing state
                         if(playButton) {
-                            playButton.innerHTML = '<span class="pause-icon">⏸</span> PLAYING';
+                            playButton.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
                             playButton.disabled = false;
                             
                             // Add now-playing class to track item for styling
@@ -799,70 +801,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             }
                         }, 1000);
                     },
-                    // On player state change
-                    function onPlayerStateChange(event) {
-                        // Update UI based on player state
-                        if(event.data === YT.PlayerState.PAUSED) {
-                            if(playButton) playButton.innerHTML = '<span class="play-icon">▶</span> RESUME';
-                        } else if(event.data === YT.PlayerState.PLAYING) {
-                            if(playButton) playButton.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
-                        } else if(event.data === YT.PlayerState.ENDED) {
-                            if(playButton) playButton.innerHTML = '<span class="replay-icon">🔄</span> REPLAY';
-                        }
-                    },
-                    // On player error
-                    function onPlayerError(event) {
-                        console.error(`Player error: ${event.data}`);
-                        
-                        // Increment retry counter
-                        const retryCount = (window.playerRetries[playerId] || 0) + 1;
-                        window.playerRetries[playerId] = retryCount;
-                        
-                        // Limit retries to 3
-                        if (retryCount <= 3) {
-                            console.log(`Retry attempt ${retryCount}/3`);
-                            
-                            // Destroy the current player
-                            if (currentPlayer) {
-                                try {
-                                    currentPlayer.destroy();
-                                } catch (e) {
-                                    console.error("Error destroying player:", e);
-                                }
-                                currentPlayer = null;
-                            }
-                            
-                            // Create a new player div
-                            const newPlayerId = 'player-retry-' + Date.now();
-                            playerWrapper.innerHTML = `<div id="${newPlayerId}" style="width:1px;height:1px;overflow:hidden;"></div>`;
-                            
-                            // Search for a different video with retry indication
-                            searchYouTubeVideo(`${trackName}__retry_${retryCount}`)
-                                .then(newVideoId => {
-                                    console.log(`Retrying with video ID: ${newVideoId}`);
-                                    
-                                    // Update YouTube link with new video ID
-                                    if (youtubeLink) {
-                                        youtubeLink.href = `https://www.youtube.com/watch?v=${newVideoId}`;
-                                    }
-                                    
-                                    // Create a new player with the new video
-                                    currentPlayer = createPlayer(
-                                        newPlayerId,
-                                        newVideoId,
-                                        onPlayerReady,
-                                        onPlayerStateChange,
-                                        onPlayerError
-                                    );
-                                });
-                        } else {
-                            console.error("Max retry attempts reached");
-                            if(playButton) {
-                                playButton.innerHTML = '<span class="error-icon">❌</span> FAILED';
-                                playButton.disabled = false;
-                            }
-                        }
-                    }
+                    onPlayerStateChange,
+                    (event) => onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange)
                 );
             })
             .catch(error => {
@@ -1175,6 +1115,82 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         console.log("YouTube API ready. Application initialized.");
+    }
+
+    // On player state change
+    function onPlayerStateChange(event) {
+        // Update UI based on player state
+        const playButton = activeTrackItem ? activeTrackItem.querySelector('.play-button') : null;
+        
+        if (!playButton) return;
+        
+        if(event.data === YT.PlayerState.PAUSED) {
+            playButton.innerHTML = '<span class="play-icon">▶</span> RESUME';
+        } else if(event.data === YT.PlayerState.PLAYING) {
+            playButton.innerHTML = '<span class="pause-icon">⏸</span> PAUSE';
+        } else if(event.data === YT.PlayerState.ENDED) {
+            playButton.innerHTML = '<span class="replay-icon">🔄</span> REPLAY';
+        }
+    }
+
+    // Add this function for player error handling
+    function onPlayerError(event, playerId, trackName, onPlayerReady, onPlayerStateChange) {
+        console.error(`Player error: ${event.data}`);
+        
+        const playButton = activeTrackItem ? activeTrackItem.querySelector('.play-button') : null;
+        const playerWrapper = activeTrackItem ? activeTrackItem.querySelector('.youtube-player-wrapper') : null;
+        const youtubeLink = activeTrackItem ? activeTrackItem.querySelector('.youtube-link') : null;
+        
+        // Increment retry counter
+        const retryCount = (window.playerRetries[playerId] || 0) + 1;
+        window.playerRetries[playerId] = retryCount;
+        
+        // Limit retries to 3
+        if (retryCount <= 3) {
+            console.log(`Retry attempt ${retryCount}/3`);
+            
+            // Destroy the current player
+            if (currentPlayer) {
+                try {
+                    currentPlayer.destroy();
+                } catch (e) {
+                    console.error("Error destroying player:", e);
+                }
+                currentPlayer = null;
+            }
+            
+            // Create a new player div
+            const newPlayerId = 'player-retry-' + Date.now();
+            if (playerWrapper) {
+                playerWrapper.innerHTML = `<div id="${newPlayerId}" style="width:1px;height:1px;overflow:hidden;"></div>`;
+            }
+            
+            // Search for a different video with retry indication
+            searchYouTubeVideo(`${trackName}__retry_${retryCount}`)
+                .then(newVideoId => {
+                    console.log(`Retrying with video ID: ${newVideoId}`);
+                    
+                    // Update YouTube link with new video ID
+                    if (youtubeLink) {
+                        youtubeLink.href = `https://www.youtube.com/watch?v=${newVideoId}`;
+                    }
+                    
+                    // Create a new player with the new video
+                    currentPlayer = createPlayer(
+                        newPlayerId,
+                        newVideoId,
+                        onPlayerReady,
+                        onPlayerStateChange,
+                        (event) => onPlayerError(event, newPlayerId, trackName, onPlayerReady, onPlayerStateChange)
+                    );
+                });
+        } else {
+            console.error("Max retry attempts reached");
+            if(playButton) {
+                playButton.innerHTML = '<span class="error-icon">❌</span> FAILED';
+                playButton.disabled = false;
+            }
+        }
     }
 });
 </script>
