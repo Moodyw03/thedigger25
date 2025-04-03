@@ -2,7 +2,7 @@
 import os
 import logging
 import redis
-from rq import Worker, Queue, Connection
+from rq import Worker, Queue
 
 # Configure logging
 logging.basicConfig(
@@ -28,13 +28,11 @@ redis_conn = redis.from_url(
 queue_name = os.getenv('QUEUE_NAME', 'default')
 
 if __name__ == '__main__':
-    # Use the Connection context to manage the Redis connection
-    with Connection(redis_conn):
-        # Create a queue with an extended timeout
-        q = Queue(queue_name, default_timeout=1800)  # 30 minutes
-        
-        # Create a worker listening on the specified queues
-        w = Worker([q])
-        
-        logger.info(f"Worker started, listening on queue: {queue_name}")
-        w.work()
+    # Create a queue with an extended timeout
+    q = Queue(queue_name, connection=redis_conn, default_timeout=1800)  # 30 minutes
+    
+    # Create a worker listening on the specified queues
+    w = Worker([q], connection=redis_conn)
+    
+    logger.info(f"Worker started, listening on queue: {queue_name}")
+    w.work()
