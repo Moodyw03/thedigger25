@@ -1,38 +1,30 @@
-#!/usr/bin/env python
+from rq import SimpleWorker, Queue
+from redis import Redis
 import os
 import logging
-import redis
-from rq import Worker, Queue
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Get Redis connection URL from environment
-redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+# Get Redis connection URL
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 logger.info(f"Connecting to Redis at: {redis_url}")
 
-# Configure Redis connection with extended timeouts
-redis_conn = redis.from_url(
+# Create Redis connection with longer timeouts
+redis_conn = Redis.from_url(
     redis_url,
-    socket_timeout=90,
-    socket_connect_timeout=30,
-    socket_keepalive=True,
-    health_check_interval=30
+    socket_timeout=90,          # Increase from default 5 seconds
+    socket_connect_timeout=30,  # Increase connection timeout
+    socket_keepalive=True,      # Keep connections alive
+    health_check_interval=30    # Check health periodically
 )
 
-# Set queue name, default is 'default'
-queue_name = os.getenv('QUEUE_NAME', 'default')
+# Create queue with a default timeout for all jobs
+queue = Queue(connection=redis_conn, default_timeout=1800)  # 30 minutes max
 
-if __name__ == '__main__':
-    # Create a queue with an extended timeout
-    q = Queue(queue_name, connection=redis_conn, default_timeout=1800)  # 30 minutes
-    
-    # Create a worker listening on the specified queues
-    w = Worker([q], connection=redis_conn)
-    
-    logger.info(f"Worker started, listening on queue: {queue_name}")
-    w.work()
+# Create a worker
+worker = SimpleWorker([queue], connection=redis_conn)
+logger.info("Worker starting...")
+worker.work()
+
