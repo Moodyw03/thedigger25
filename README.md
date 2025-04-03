@@ -12,6 +12,7 @@ A tool for finding and listening to tracks played by your favorite DJs on MixesD
 - Minimal, clean interface with responsive design
 - Fast caching system for improved performance
 - Automatic rate limiting to prevent being blocked
+- Background job processing for handling heavy operations
 
 ## Running the App
 
@@ -38,18 +39,36 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-5. Run the application
+5. Start Redis (required for background job processing)
+   Make sure Redis is installed and running locally on the default port (6379)
+   or set the REDIS_URL environment variable to point to your Redis instance.
+
+6. Run the application (choose one option)
+
+#### Option A: Simple mode (all-in-one)
 
 ```bash
-# Option 1: Using the shell script (recommended)
+# Using the shell script (recommended for beginners)
 ./run-app.sh
-
-# Option 2: Direct Python command
-python digger.py
-
-# Option 3: If you've set up the alias using reset-terminal.sh
-digger
 ```
+
+#### Option B: Advanced mode (separate backend and worker)
+
+For better performance and handling of long-running jobs, run the app using separate processes:
+
+Terminal 1 - Start the Flask application:
+
+```bash
+./run-app.sh
+```
+
+Terminal 2 - Start the worker process:
+
+```bash
+python worker_simple.py
+```
+
+With this setup, the Flask app handles web requests while the worker processes background jobs separately. This prevents long-running operations from blocking the web interface.
 
 The app will automatically:
 
@@ -67,6 +86,9 @@ The app will automatically:
 
 # Check dependencies
 ./check-dependencies.sh
+
+# Run worker with custom Redis URL
+REDIS_URL=redis://custom-host:6379 python worker_simple.py
 ```
 
 ## Environment Variables
@@ -74,7 +96,16 @@ The app will automatically:
 The application can be configured using environment variables in a `.env` file:
 
 ```
+# Flask configuration
 FLASK_ENV=development
+FLASK_DEBUG=0
+FLASK_HOST=0.0.0.0
+FLASK_PORT=8080
+
+# Redis and background jobs
+REDIS_URL=redis://localhost:6379
+
+# Scraper configuration
 MAX_FETCH_LIMIT=300
 REQUEST_TIMEOUT=20
 MAX_RETRIES=3
@@ -98,9 +129,11 @@ This application can be easily deployed on Railway. Follow these steps:
 
 ### Important Notes for Railway Deployment
 
-- Railway automatically detects the required start command from the `Procfile`.
+- Railway automatically detects the required start commands from the `Procfile`.
+- The Procfile contains commands for both the web app and worker process.
 - Dependencies are installed from `requirements.txt`.
 - Ensure all necessary environment variables from `.env.example` are set in the Railway service variables section.
+- Railway will handle running both the web app and the worker process.
 
 ## Advanced Usage
 
@@ -116,20 +149,31 @@ http://localhost:8080/direct_pdf_download?artist_name=Ben%20UFO
 
 The application provides the following API endpoints:
 
-- `/api/list?artist_name=Ben%20UFO` - Get JSON data of all tracks
+- `/api/list?artist_name=Ben%20UFO` - Get JSON data of all tracks (synchronous, may time out for large requests)
+- `/search?artist_name=Ben%20UFO` - Start a background job to fetch tracks (recommended for large requests)
+- `/job/<job_id>/status` - Check status of a background job
+- `/job/<job_id>/result` - Get results of a completed background job
 - `/search_video?query=Artist%20-%20Track` - Search YouTube for a video
-- `/download_tracklists_pdf?artist_name=Ben%20UFO` - Generate a PDF of tracklists
+- `/start_pdf_job?artist_name=Ben%20UFO` - Start a background job to generate a PDF
+- `/get_pdf/<job_id>` - Download the generated PDF from a completed job
 
 ## How It Works
 
 1. The app scrapes DJ tracklists from [MixesDB](https://www.mixesdb.com/)
-2. When you click Play, it searches YouTube for the track and plays the audio
-3. For better listening experience, playback starts at 2 minutes into each track
-4. If you want to view the full YouTube video, click the YouTube icon next to the player
+2. Background processing:
+   - For large requests, the app uses a Redis queue and worker process
+   - The web interface remains responsive while scraping happens in the background
+   - Real-time progress updates are shown to the user
+3. When you click Play, it searches YouTube for the track and plays the audio
+4. For better listening experience, playback starts at 2 minutes into each track
+5. If you want to view the full YouTube video, click the YouTube icon next to the player
+6. PDF generation also happens in the background to prevent timeouts
 
 ## Technology Stack
 
 - Backend: Python, Flask
+- Queue System: Redis, RQ (Redis Queue)
+- Worker: Python RQ SimpleWorker
 - Frontend: HTML, CSS, JavaScript
 - Data Processing: BeautifulSoup, requests
 - PDF Generation: ReportLab
