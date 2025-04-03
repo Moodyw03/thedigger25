@@ -559,6 +559,66 @@ def search_video():
         logger.error(f"Error searching YouTube: {str(e)}")
         return jsonify({"error": f"An error occurred while searching YouTube: {str(e)}"}), 500
 
+# --- YouTube Audio Proxy Endpoint ---
+@app.route("/audio_proxy")
+def audio_proxy():
+    """Proxies audio from YouTube videos that can't be embedded."""
+    video_id = request.args.get("video_id")
+    if not video_id:
+        return jsonify({"error": "Video ID is required"}), 400
+    
+    try:
+        # Use yt-dlp to extract YouTube video information
+        import yt_dlp as youtube_dl
+        
+        # Configure yt-dlp options
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'skip_download': True,
+        }
+        
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            # Extract information without downloading
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            
+            # Get the best audio format URL
+            formats = info.get('formats', [])
+            audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
+            
+            if audio_formats:
+                # Sort by quality (typically bitrate)
+                audio_formats.sort(key=lambda x: x.get('abr', 0), reverse=True)
+                best_audio = audio_formats[0]
+                audio_url = best_audio['url']
+                
+                # Return just the direct audio URL
+                return jsonify({
+                    "success": True,
+                    "audio_url": audio_url,
+                    "title": info.get('title', ''),
+                    "duration": info.get('duration', 0)
+                })
+            else:
+                # Fall back to any format with audio
+                for format in formats:
+                    if format.get('acodec') != 'none':
+                        return jsonify({
+                            "success": True,
+                            "audio_url": format['url'],
+                            "title": info.get('title', ''),
+                            "duration": info.get('duration', 0)
+                        })
+                
+                return jsonify({"error": "No suitable audio format found"}), 404
+                
+    except Exception as e:
+        logger.error(f"Error proxying YouTube audio: {str(e)}")
+        return jsonify({"error": f"Failed to extract audio: {str(e)}"}), 500
+
 # Main entry point for development server (not used by Gunicorn)
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

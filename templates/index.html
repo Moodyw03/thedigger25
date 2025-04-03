@@ -877,10 +877,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Helper function to display player errors
-    function showPlayerError(errorElement, message) {
+    function showPlayerError(errorElement, message, isSuccess = false) {
         if (!errorElement) return;
         
-        errorElement.innerHTML = `<span class="player-error-icon">⚠️</span> ${message}`;
+        if (isSuccess) {
+            errorElement.innerHTML = `<span class="player-success-icon">✅</span> ${message}`;
+        } else {
+            errorElement.innerHTML = `<span class="player-error-icon">⚠️</span> ${message}`;
+        }
         errorElement.style.display = 'block';
     }
 
@@ -1305,6 +1309,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const playerWrapper = activeTrackItem ? activeTrackItem.querySelector('.youtube-player-wrapper') : null;
         const youtubeLink = activeTrackItem ? activeTrackItem.querySelector('.youtube-link') : null;
         
+        // Get video ID from YouTube link
+        const videoId = youtubeLink && youtubeLink.href ? youtubeLink.href.split('v=')[1]?.split('&')[0] : null;
+        
         // Get a more specific error message based on the error code
         let errorMessage = "Unable to play track";
         
@@ -1320,13 +1327,115 @@ document.addEventListener('DOMContentLoaded', function() {
                 break;
             case 101:
             case 150:
-                errorMessage = "Video embedding not allowed. Click YOUTUBE to watch directly.";
-                // For this specific track, store in "blocked" cache to avoid trying again
-                if (youtubeLink && youtubeLink.href) {
-                    const videoId = youtubeLink.href.split('v=')[1]?.split('&')[0];
-                    if (videoId) {
-                        saveBlockedVideo(videoId);
+                errorMessage = "Video embedding not allowed. Trying direct audio stream...";
+                
+                // For this specific track, store in "blocked" cache to avoid trying again with iframe
+                if (videoId) {
+                    saveBlockedVideo(videoId);
+                }
+                
+                // Try the audio proxy endpoint for direct audio playback
+                if (videoId) {
+                    if (playButton) {
+                        playButton.innerHTML = '<span class="loading-icon">⏳</span> LOADING AUDIO...';
                     }
+                    
+                    fetch(`/audio_proxy?video_id=${videoId}`)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Audio proxy error: ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            
+                            // Destroy the YouTube player
+                            if (currentPlayer) {
+                                try {
+                                    currentPlayer.destroy();
+                                } catch (e) {
+                                    console.error("Error destroying player:", e);
+                                }
+                                currentPlayer = null;
+                            }
+                            
+                            // Create audio element for direct playback
+                            const audioElement = document.createElement('audio');
+                            audioElement.controls = true;
+                            audioElement.autoplay = true;
+                            audioElement.src = data.audio_url;
+                            audioElement.style.width = "100%";
+                            
+                            // Replace YouTube player with audio element
+                            if (playerWrapper) {
+                                playerWrapper.innerHTML = '';
+                                playerWrapper.appendChild(audioElement);
+                                playerWrapper.style.width = "100%";
+                                playerWrapper.style.height = "40px";
+                            }
+                            
+                            // Update the play button
+                            if (playButton) {
+                                playButton.innerHTML = '<span class="audio-icon">🔊</span> AUDIO PLAYING';
+                                playButton.disabled = false;
+                            }
+                            
+                            // Show success message
+                            showPlayerError(errorDisplay, `Playing audio: ${data.title}`, true);
+                            
+                            // For time tracking
+                            if (updateTimeInterval) clearInterval(updateTimeInterval);
+                            updateTimeInterval = setInterval(function() {
+                                const timeDisplay = activeTrackItem ? activeTrackItem.querySelector('.time-display') : null;
+                                if (timeDisplay && audioElement) {
+                                    timeDisplay.textContent = formatTime(audioElement.currentTime) + ' / ' + formatTime(audioElement.duration);
+                                }
+                            }, 1000);
+                            
+                            // Save this as a successful playback
+                            if (trackName) {
+                                saveSuccessfulVideo(trackName, videoId);
+                            }
+                            
+                            // Add play/pause toggle function
+                            if (playButton) {
+                                playButton.onclick = function() {
+                                    if (audioElement.paused) {
+                                        audioElement.play();
+                                        playButton.innerHTML = '<span class="audio-icon">🔊</span> AUDIO PLAYING';
+                                    } else {
+                                        audioElement.pause();
+                                        playButton.innerHTML = '<span class="audio-icon">🔇</span> AUDIO PAUSED';
+                                    }
+                                };
+                            }
+                            
+                            // Add event listeners to audio element
+                            audioElement.addEventListener('ended', function() {
+                                if (playButton) {
+                                    playButton.innerHTML = '<span class="replay-icon">🔄</span> REPLAY';
+                                }
+                                
+                                // If we're in Play All mode, skip to next
+                                if (isPlayingAll) {
+                                    console.log('Play All: Audio ended naturally, skipping to next track');
+                                    skipTrack();
+                                }
+                            });
+                        })
+                        .catch(error => {
+                            console.error("Audio proxy error:", error);
+                            
+                            // Fall back to retry with another video if audio proxy fails
+                            showPlayerError(errorDisplay, "Direct audio failed. Trying alternative source...");
+                            
+                            // Continue with the standard retry approach
+                            retryWithAlternativeVideo(event, playerId, trackName, onReadyCallback, onStateChangeCallback, errorDisplay);
+                        });
+                    return; // Don't continue with other error handling
                 }
                 break;
             default:
@@ -1335,6 +1444,16 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Show error message to user
         showPlayerError(errorDisplay, errorMessage);
+        
+        // Call the retry function for other errors
+        retryWithAlternativeVideo(event, playerId, trackName, onReadyCallback, onStateChangeCallback, errorDisplay);
+    }
+
+    // Helper function to retry with alternative videos
+    function retryWithAlternativeVideo(event, playerId, trackName, onReadyCallback, onStateChangeCallback, errorDisplay) {
+        const playButton = activeTrackItem ? activeTrackItem.querySelector('.play-button') : null;
+        const playerWrapper = activeTrackItem ? activeTrackItem.querySelector('.youtube-player-wrapper') : null;
+        const youtubeLink = activeTrackItem ? activeTrackItem.querySelector('.youtube-link') : null;
         
         // Increment retry counter
         const retryCount = (window.playerRetries[playerId] || 0) + 1;
