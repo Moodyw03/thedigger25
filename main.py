@@ -46,12 +46,32 @@ CATEGORY_BASE_URL = "https://www.mixesdb.com/w/Category:"
 # --- Redis Cache Configuration ---
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0") # Default to local if not set
 CACHE_TTL = int(os.getenv("CACHE_TTL", 86400)) # Cache TTL in seconds (default: 24 hours)
+
+# +++ Added logging for the REDIS_URL +++
+logger.info(f"[main.py] Read REDIS_URL from environment: '{REDIS_URL}'")
+
+redis_client = None
 try:
+    # +++ Added logging +++
+    logger.info(f"[main.py] Attempting Redis connection using URL: '{REDIS_URL}'")
+    # +++ Added validation block +++
+    if not REDIS_URL or not (REDIS_URL.startswith('redis://') or REDIS_URL.startswith('rediss://')):
+         logger.error(f"[main.py] Invalid Redis URL scheme or URL is empty: '{REDIS_URL}'")
+         raise ValueError("Redis URL is missing or does not start with redis:// or rediss://")
+    # +++ End validation block +++
     redis_client = redis.from_url(REDIS_URL, decode_responses=False) # Store bytes/raw strings
     redis_client.ping() # Check connection
-    logger.info(f"Successfully connected to Redis for caching at {REDIS_URL.split('@')[-1]}") # Avoid logging password
+    logger.info(f"[main.py] Successfully connected to Redis for caching at {REDIS_URL.split('@')[-1]}") # Avoid logging password
+
+# +++ Updated except blocks +++
 except redis.exceptions.ConnectionError as e:
-    logger.error(f"Failed to connect to Redis for caching: {e}. Caching will be disabled.")
+    logger.error(f"[main.py] Failed to connect to Redis for caching with URL '{REDIS_URL}': {e}. Caching will be disabled.")
+    redis_client = None
+except ValueError as e: # Catch the explicit validation error
+    logger.error(f"[main.py] Failed due to invalid Redis URL '{REDIS_URL}' for caching: {e}. Caching will be disabled.")
+    redis_client = None
+except Exception as e: # Generic catch-all
+    logger.error(f"[main.py] An unexpected error occurred during Redis setup with URL '{REDIS_URL}': {e}", exc_info=True)
     redis_client = None
 
 def build_explorer_url(artist_name, offset, other_params):
