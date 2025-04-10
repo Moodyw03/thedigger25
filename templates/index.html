@@ -285,6 +285,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             const data = await response.json();
+            
+            // Handle cached response directly (new feature)
+            if (data.status === 'cached') {
+                console.log("Cache hit! Rendering cached results directly");
+                progressStatus.textContent = 'Retrieved from cache';
+                progressBarFill.style.width = '100%';
+                // Briefly show the success message before hiding the progress bar
+                setTimeout(() => {
+                    progressIndicator.style.display = 'none';
+                }, 1500);
+                renderResults(data.data); // Render the cached data directly
+                searchButton.disabled = false;
+                searchButton.textContent = 'Search';
+                return;
+            }
+            
+            // Handle queued job (original flow)
             currentJobId = data.job_id;
             progressStatus.textContent = 'Search job started. Waiting for progress...';
             progressBarFill.style.width = '10%';
@@ -325,9 +342,32 @@ document.addEventListener('DOMContentLoaded', function() {
                         progressBarFill.style.width = '20%';
                         break;
                     case 'started':
-                        // Could potentially use job.meta here if the backend provides progress
-                        progressStatus.textContent = 'Scraping in progress...'; 
-                        progressBarFill.style.width = '50%';
+                        // Use job.meta for enhanced progress tracking
+                        if (data.meta && data.meta.progress !== undefined) {
+                            const progress = data.meta.progress;
+                            const status = data.meta.status || 'Processing...';
+                            progressStatus.textContent = status;
+                            progressBarFill.style.width = `${Math.max(20, progress)}%`;
+                            
+                            // Add extra information about mixes found if available
+                            if (data.meta.total_mixes_found) {
+                                const mixCount = document.createElement('div');
+                                mixCount.className = 'meta-info';
+                                mixCount.textContent = `Found ${data.meta.total_mixes_found} mixes so far`;
+                                
+                                // Replace any existing meta-info
+                                const existingMeta = progressIndicator.querySelector('.meta-info');
+                                if (existingMeta) {
+                                    existingMeta.remove();
+                                }
+                                
+                                progressIndicator.appendChild(mixCount);
+                            }
+                        } else {
+                            // Fallback for jobs that don't provide progress
+                            progressStatus.textContent = 'Scraping in progress...'; 
+                            progressBarFill.style.width = '50%';
+                        }
                         break;
                     case 'finished':
                         clearInterval(pollingInterval);

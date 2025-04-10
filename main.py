@@ -1026,6 +1026,19 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
     if not artist_name:
         raise ValueError("Artist name is required")
 
+    # Initialize job progress tracking
+    from rq.job import get_current_job
+    job = get_current_job()
+    
+    # Initialize progress if running as a job
+    if job:
+        job.meta['progress'] = 0
+        job.meta['status'] = f'Starting search for artist: {artist_name}'
+        job.meta['total_mixes_found'] = 0
+        job.meta['artist_name'] = artist_name
+        job.save_meta()
+        logger.info(f"Running as job {job.id} - progress tracking enabled")
+
     cache_key = f"artist_cache:{artist_name.lower().replace(' ', '_')}" # Normalize key
     
     # --- Check Cache ---
@@ -1036,6 +1049,15 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
                 logger.info(f"Cache hit for artist: {artist_name}")
                 # Deserialize the data from JSON string
                 all_tracklists = json.loads(cached_data.decode('utf-8')) # Decode bytes then parse JSON
+                
+                # Update job meta if running as a job
+                if job:
+                    job.meta['progress'] = 100
+                    job.meta['status'] = f'Retrieved {len(all_tracklists)} mixes from cache'
+                    job.meta['total_mixes_found'] = len(all_tracklists)
+                    job.meta['cached'] = True
+                    job.save_meta()
+                    
                 return all_tracklists
             else:
                 logger.info(f"Cache miss for artist: {artist_name}")
@@ -1047,7 +1069,18 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
 
     # --- Cache Miss - Proceed with scraping ---
     logger.info(f"Processing artist: {artist_name} (no cache)")
+    
+    # Reduce max explorer mixes for large catalogs to improve stability
+    if max_explorer_mixes > 100:
+        logger.info(f"Limiting max explorer mixes to 100 for better stability (was {max_explorer_mixes})")
+        max_explorer_mixes = 100
+        
     logger.info(f"Configured limits: Max pagination pages={max_pagination_pages}, Max explorer mixes={max_explorer_mixes}")
+    
+    if job:
+        job.meta['progress'] = 5
+        job.meta['status'] = 'Starting artist search...'
+        job.save_meta()
     
     start_time = time.time()
     processing_step = 1
@@ -1062,6 +1095,12 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
         
         # First, try the category page approach with pagination support
         logger.info(f"[Step {processing_step}/{total_steps}] Attempting to fetch mixes from Category pages for {artist_name}")
+        
+        if job:
+            job.meta['progress'] = 10
+            job.meta['status'] = 'Fetching from artist category pages...'
+            job.save_meta()
+        
         try:
             # Fetch all pages for this category
             category_pages = fetch_all_category_pages(artist_name, max_pagination_pages)
@@ -1070,11 +1109,21 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
             for i, soup in enumerate(category_pages):
                 progress = ((i + 1) / len(category_pages)) * 100
                 logger.info(f"Parsing category page {i+1} of {len(category_pages)} - {progress:.1f}% complete")
+                
+                if job:
+                    job.meta['progress'] = 10 + int((i + 1) * 10 / len(category_pages))
+                    job.meta['status'] = f'Parsing category page {i+1} of {len(category_pages)}'
+                    job.save_meta()
+                
                 page_tracklists = parse_category_page(soup, artist_name)
                 category_tracklists.extend(page_tracklists)
                 
             if category_tracklists:
                 logger.info(f"Successfully retrieved {len(category_tracklists)} mixes from all Category pages")
+                
+                if job:
+                    job.meta['total_mixes_found'] = len(category_tracklists)
+                    job.save_meta()
                 
                 # Count mixes with tracklists
                 mixes_with_tracklists = sum(1 for mix in category_tracklists if mix.get("has_tracklist", False))
@@ -1084,6 +1133,29 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
                 if mixes_with_tracklists >= 10:  # A reasonable number of tracklists
                     logger.info(f"Found {mixes_with_tracklists} mixes with tracklists from Category pages, skipping Explorer page")
                     all_tracklists.extend(category_tracklists)
+                    
+                    # Update job progress
+                    if job:
+                        job.meta['progress'] = 90
+                        job.meta['status'] = 'Finalizing results (skipping explorer page)...'
+                        job.save_meta()
+                    
+                    # Store in cache and finalize
+                    if redis_client:
+                        try:
+                            # Serialize the data to JSON string
+                            serialized_data = json.dumps(all_tracklists).encode('utf-8')
+                            redis_client.setex(cache_key, CACHE_TTL, serialized_data)
+                            logger.info(f"Stored results for {artist_name} in Redis cache with TTL {CACHE_TTL}s.")
+                        except Exception as e:
+                            logger.error(f"Error storing results in cache: {str(e)}")
+                    
+                    # Complete job
+                    if job:
+                        job.meta['progress'] = 100
+                        job.meta['status'] = 'Completed'
+                        job.save_meta()
+                        
                     elapsed_time = time.time() - start_time
                     logger.info(f"Total processing time: {elapsed_time:.2f} seconds")
                     return all_tracklists
@@ -1109,6 +1181,12 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
         
         processing_step += 1
         
+        # Update job progress before explorer search
+        if job:
+            job.meta['progress'] = 25
+            job.meta['status'] = 'Fetching from explorer page...'
+            job.save_meta()
+        
         # Then try the Explorer page approach to find more mixes with tracklists
         logger.info(f"[Step {processing_step}/{total_steps}] Attempting to fetch mixes from Explorer page for {artist_name}")
         try:
@@ -1118,28 +1196,49 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
             if total_track_lists == 0:
                 logger.warning(f"No tracklists found for {artist_name} in Explorer")
             else:
-                logger.info(f"Fetching {total_track_lists} tracklists in batches of 25")
+                # REDUCED BATCH SIZE: Use 10 instead of 25 for better stability
+                batch_size = 10  # Smaller batches for better stability
+                logger.info(f"Fetching {total_track_lists} tracklists in batches of {batch_size}")
                 
                 # For large catalogs, limit to a reasonable number for better performance
                 if total_track_lists > 200:
                     logger.info(f"Large catalog detected ({total_track_lists} mixes). Limiting fetch to prioritize performance.")
-                    # Get first X mixes which typically include the most popular ones with tracklists
-                    # Respect the user-configured limit
-                    max_to_fetch = min(max_explorer_mixes, 200)
+                    max_to_fetch = min(max_explorer_mixes, 100)  # Reduced from 200 to 100
                     logger.info(f"Fetching first {max_to_fetch} mixes for faster results")
                 else:
                     # For smaller catalogs, fetch up to the limit
                     max_to_fetch = min(total_track_lists, max_explorer_mixes)
                 
-                for offset in range(0, max_to_fetch, 25):
+                # Update job with total expected mixes
+                if job:
+                    job.meta['explorer_total'] = max_to_fetch
+                    job.save_meta()
+                
+                for offset in range(0, max_to_fetch, batch_size):
                     progress = (offset / max_to_fetch) * 100
-                    logger.info(f"Fetching batch starting at offset {offset} - {progress:.1f}% complete")
+                    batch_end = min(offset + batch_size, max_to_fetch)
+                    logger.info(f"Fetching batch {offset}-{batch_end} - {progress:.1f}% complete")
+                    
+                    # Update job progress for each batch
+                    if job:
+                        explorer_progress = int(25 + (offset / max_to_fetch) * 40)  # Scale from 25% to 65%
+                        job.meta['progress'] = explorer_progress
+                        job.meta['status'] = f'Fetching mixes {offset+1}-{batch_end} of {max_to_fetch}'
+                        job.save_meta()
+                    
                     soup = fetch_tracklists_explorer(artist_name, offset, {})
                     explorer_batch = parse_tracklists_explorer(soup)
                     explorer_tracklists.extend(explorer_batch)
                     
                     # Report running total of found mixes
                     logger.info(f"Running total: {len(explorer_tracklists)} mixes found so far")
+                    
+                    if job:
+                        job.meta['total_mixes_found'] = len(all_tracklists) + len(explorer_tracklists)
+                        job.save_meta()
+                    
+                    # Add a small delay between batches to avoid overwhelming server
+                    time.sleep(1)
                 
                 if explorer_tracklists:
                     logger.info(f"Successfully retrieved {len(explorer_tracklists)} mixes from Explorer page")
@@ -1147,6 +1246,12 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
                     # Count mixes with tracklists
                     explorer_with_tracklists = sum(1 for mix in explorer_tracklists if mix.get("has_tracklist", False))
                     logger.info(f"{explorer_with_tracklists} mixes have tracklists from Explorer page")
+                    
+                    # Update job progress
+                    if job:
+                        job.meta['progress'] = 70
+                        job.meta['status'] = 'Combining results from Category and Explorer pages'
+                        job.save_meta()
                     
                     processing_step += 1
                     logger.info(f"[Step {processing_step}/{total_steps}] Combining results from Category and Explorer pages")
@@ -1170,6 +1275,12 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
                         logger.info(f"No Category results found, using all {len(explorer_tracklists)} mixes from Explorer")
         except Exception as e:
             logger.warning(f"Error fetching from Explorer page: {str(e)}")
+        
+        # Update job progress for final processing
+        if job:
+            job.meta['progress'] = 85
+            job.meta['status'] = 'Final processing and caching results'
+            job.save_meta()
         
         processing_step += 1
         logger.info(f"[Step {processing_step}/{total_steps}] Final processing")
@@ -1195,6 +1306,16 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
                 logger.error(f"Redis error storing results for {artist_name}: {e}")
             except TypeError as e:
                  logger.error(f"Serialization error for {artist_name} results: {e}. Cannot cache.")
+
+        # Update job to complete
+        if job:
+            job.meta['progress'] = 100
+            job.meta['status'] = 'Completed'
+            job.meta['total_mixes_found'] = len(all_tracklists)
+            job.meta['mixes_with_tracklists'] = mixes_with_tracklists
+            job.meta['total_tracks'] = total_tracks
+            job.meta['processing_time'] = f"{execution_time:.2f} seconds"
+            job.save_meta()
 
         return all_tracklists
         

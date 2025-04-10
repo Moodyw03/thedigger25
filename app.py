@@ -136,7 +136,12 @@ def start_search_job():
                     return jsonify({ "status": "cached", "data": artist_data })
                 except json.JSONDecodeError as e:
                     logger.error(f"Error decoding cached JSON for {artist_name} in /search: {e}. Cache entry corrupted? Proceeding to queue job.")
-                    # Optionally, delete the corrupted key: redis_cache_client.delete(cache_key)
+                    # Optionally, delete the corrupted key
+                    try:
+                        redis_cache_client.delete(cache_key)
+                        logger.info(f"Deleted corrupted cache entry for {artist_name}")
+                    except:
+                        pass
             else:
                 logger.info(f"Cache miss in /search for artist: {artist_name}. Proceeding to queue job.")
         except redis.exceptions.RedisError as e:
@@ -150,18 +155,30 @@ def start_search_job():
     try:
         logger.info(f"Enqueuing search job for artist: {artist_name}")
         
-        # Enqueue the scraper.main function with the artist name.
-        # Increase timeout for large artist catalogs
+        # INCREASED TIMEOUT: 1 hour (3600 seconds) instead of 30 minutes (1800 seconds)
+        # for better handling of large artist catalogs
         job = q.enqueue(
             'main.main', 
             artist_name, 
-            job_timeout=1800,     # 30 minutes timeout for large catalogs
-            result_ttl=86400      # Keep results for 24 hours
+            job_timeout=3600,     # 60 minutes timeout for large catalogs (increased from 30 minutes)
+            result_ttl=86400,     # Keep results for 24 hours
+            description=f"Artist search: {artist_name}",  # Better job description for monitoring
+            meta={
+                'artist_name': artist_name,
+                'enqueued_at': time.time(),
+                'status': 'Queued',
+                'progress': 0
+            }
         )
         
         logger.info(f"Job enqueued with ID: {job.id}")
         # Return the job ID to the client
-        return jsonify({"job_id": job.id, "status": "queued"})
+        return jsonify({
+            "job_id": job.id, 
+            "status": "queued",
+            "artist_name": artist_name,
+            "message": "Your search has been queued. Results will be ready soon."
+        })
     
     except Exception as e:
         logger.error(f"Error enqueuing job for {artist_name}: {str(e)}")
