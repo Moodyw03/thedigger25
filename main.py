@@ -8,6 +8,7 @@ import re
 import os
 import random
 from datetime import datetime
+import redis
 
 from clean_item import clean_item
 
@@ -42,6 +43,16 @@ EXPLORER_BASE_URL = "https://www.mixesdb.com/w/MixesDB:Explorer/Mixes"
 # Base URL for the Category pages
 CATEGORY_BASE_URL = "https://www.mixesdb.com/w/Category:"
 
+# --- Redis Cache Configuration ---
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0") # Default to local if not set
+CACHE_TTL = int(os.getenv("CACHE_TTL", 86400)) # Cache TTL in seconds (default: 24 hours)
+try:
+    redis_client = redis.from_url(REDIS_URL, decode_responses=False) # Store bytes/raw strings
+    redis_client.ping() # Check connection
+    logger.info(f"Successfully connected to Redis for caching at {REDIS_URL.split('@')[-1]}") # Avoid logging password
+except redis.exceptions.ConnectionError as e:
+    logger.error(f"Failed to connect to Redis for caching: {e}. Caching will be disabled.")
+    redis_client = None
 
 def build_explorer_url(artist_name, offset, other_params):
     """Build the URL for the MixesDB Explorer request."""
@@ -991,14 +1002,33 @@ def write_to_json(tracklists, filename="tracklists.json"):
 
 
 def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mixes=MAX_FETCH_LIMIT):
-    """Main function to fetch and process tracklists using both methods with configurable limits."""
+    """Main function to fetch and process tracklists, using Redis cache."""
     if not artist_name:
         raise ValueError("Artist name is required")
-        
-    logger.info(f"Processing artist: {artist_name}")
+
+    cache_key = f"artist_cache:{artist_name.lower().replace(' ', '_')}" # Normalize key
+    
+    # --- Check Cache ---
+    if redis_client:
+        try:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logger.info(f"Cache hit for artist: {artist_name}")
+                # Deserialize the data from JSON string
+                all_tracklists = json.loads(cached_data.decode('utf-8')) # Decode bytes then parse JSON
+                return all_tracklists
+            else:
+                logger.info(f"Cache miss for artist: {artist_name}")
+        except redis.exceptions.RedisError as e:
+            logger.error(f"Redis error checking cache for {artist_name}: {e}. Proceeding without cache.")
+        except json.JSONDecodeError as e:
+             logger.error(f"Error decoding cached JSON for {artist_name}: {e}. Cache entry might be corrupted. Re-fetching.")
+             # Optionally, delete the corrupted key: redis_client.delete(cache_key)
+
+    # --- Cache Miss - Proceed with scraping ---
+    logger.info(f"Processing artist: {artist_name} (no cache)")
     logger.info(f"Configured limits: Max pagination pages={max_pagination_pages}, Max explorer mixes={max_explorer_mixes}")
     
-    # Progress tracking variables
     start_time = time.time()
     processing_step = 1
     total_steps = 4  # Category pages, Explorer pages, Processing, Combining
@@ -1134,9 +1164,18 @@ def main(artist_name, max_pagination_pages=MAX_PAGINATION_PAGES, max_explorer_mi
         logger.info(f"Processing complete in {execution_time:.2f} seconds")
         logger.info(f"Successfully processed {total_tracks} tracks across {mixes_with_tracklists} mixes with tracklists (total mixes: {len(all_tracklists)})")
         
-        # Optionally save to file
-        # write_to_json(all_tracklists)
-        
+        # --- Store in Cache ---
+        if redis_client:
+            try:
+                # Serialize the data to JSON string
+                serialized_data = json.dumps(all_tracklists).encode('utf-8') # Encode to bytes for storage
+                redis_client.setex(cache_key, CACHE_TTL, serialized_data)
+                logger.info(f"Stored results for {artist_name} in Redis cache with TTL {CACHE_TTL}s.")
+            except redis.exceptions.RedisError as e:
+                logger.error(f"Redis error storing results for {artist_name}: {e}")
+            except TypeError as e:
+                 logger.error(f"Serialization error for {artist_name} results: {e}. Cannot cache.")
+
         return all_tracklists
         
     except Exception as e:

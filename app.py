@@ -18,6 +18,8 @@ from reportlab.pdfgen import canvas
 import main as scraper # Renamed to avoid confusion with main module name
 from dotenv import load_dotenv
 from track_formatter import format_track_for_pdf
+import json
+import redis # Add redis import for caching checks
 
 # RQ imports
 from redis import from_url as redis_from_url
@@ -38,38 +40,40 @@ CACHE_EXPIRY = int(os.environ.get('CACHE_EXPIRY', 86400))
 app = Flask(__name__)
 CORS(app)
 
-# --- RQ and Redis Setup ---
-# Get Redis URL from environment (provided by Railway)
-redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-try:
-    # Create Redis connection with longer timeouts to prevent connection issues during long operations
-    redis_conn = redis_from_url(
-        redis_url,
-        socket_timeout=90,         # Increase from default 5 seconds
-        socket_connect_timeout=30,  # Increase connection timeout
-        socket_keepalive=True,      # Keep connections alive
-        health_check_interval=30    # Check health periodically
-    )
-    # Test connection
-    redis_conn.ping()
-    logger.info(f"Successfully connected to Redis at {redis_url}")
-except Exception as e:
-    logger.error(f"Failed to connect to Redis: {e}")
-    # If Redis isn't available, the app can still render the basic page,
-    # but background tasks won't work.
-    redis_conn = None
+# --- Redis & RQ Setup ---
+# Connect to Redis using the URL provided by Railway (or default)
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+CACHE_TTL = int(os.getenv("CACHE_TTL", 86400)) # Cache TTL in seconds (default: 24 hours)
 
-if redis_conn:
-    # Use the 'default' queue with increased timeout for long-running jobs
-    q = Queue(
-        connection=redis_conn,
-        default_timeout=1800  # 30 minutes default timeout for long lists
-    )
-    logger.info("RQ Queue initialized with 30-minute timeout.")
-else:
+redis_conn = None
+q = None
+
+try:
+    # Establish Redis connection for RQ
+    redis_conn = redis.from_url(REDIS_URL)
+    redis_conn.ping() # Check connection
+    logger.info(f"Successfully connected to Redis for RQ at {REDIS_URL.split('@')[-1]}") # Avoid logging password
+    
+    # Create the RQ queue
+    q = Queue(connection=redis_conn)
+    logger.info("RQ Queue initialized successfully.")
+    
+except redis.exceptions.ConnectionError as e:
+    logger.error(f"Failed to connect to Redis for RQ: {e}. Background tasks will not be available.")
+    # Set q to None so that endpoints can check and return an error
     q = None
-    logger.warning("RQ Queue not initialized due to Redis connection failure.")
-# ------
+
+# Also establish a separate connection for general caching (optional but good practice)
+# This uses the same REDIS_URL but avoids potential conflicts if RQ uses specific DB numbers
+redis_cache_client = None
+try:
+    # Use decode_responses=False to store raw bytes/strings for flexibility
+    redis_cache_client = redis.from_url(REDIS_URL, decode_responses=False)
+    redis_cache_client.ping()
+    logger.info(f"Successfully connected to Redis for general caching at {REDIS_URL.split('@')[-1]}")
+except redis.exceptions.ConnectionError as e:
+    logger.error(f"Failed to connect to Redis for caching: {e}. Caching features will be disabled.")
+    redis_cache_client = None
 
 @app.route("/")
 def index():
@@ -78,13 +82,32 @@ def index():
 
 @app.route("/search", methods=['POST']) # Changed to POST for clarity
 def start_search_job():
-    """Enqueue a search job and return the job ID."""
+    """Enqueue a search job, checking cache first, and return the job ID or cached data."""
     artist_name = request.form.get("artist_name", "")
     
     if not artist_name:
-        # Return an error if no artist name provided
         return jsonify({"error": "Artist name is required"}), 400
     
+    # --- Check Cache Before Queuing ---
+    cache_key = f"artist_cache:{artist_name.lower().replace(' ', '_')}" # Consistent key
+    if redis_cache_client:
+        try:
+            cached_data = redis_cache_client.get(cache_key)
+            if cached_data:
+                logger.info(f"Cache hit in /search for artist: {artist_name}. Returning cached data.")
+                try:
+                    # Decode bytes then parse JSON
+                    artist_data = json.loads(cached_data.decode('utf-8'))
+                    return jsonify({ "status": "cached", "data": artist_data })
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error decoding cached JSON for {artist_name} in /search: {e}. Cache entry corrupted? Proceeding to queue job.")
+                    # Optionally, delete the corrupted key: redis_cache_client.delete(cache_key)
+            else:
+                logger.info(f"Cache miss in /search for artist: {artist_name}. Proceeding to queue job.")
+        except redis.exceptions.RedisError as e:
+            logger.error(f"Redis error checking cache in /search for {artist_name}: {e}. Proceeding to queue job.")
+
+    # --- Queue Job if Cache Miss or Redis Error ---
     if q is None:
         logger.error("Cannot enqueue job: RQ Queue not available (Redis connection failed).")
         return jsonify({"error": "Background task queue is not available"}), 503 # Service Unavailable
@@ -103,7 +126,7 @@ def start_search_job():
         
         logger.info(f"Job enqueued with ID: {job.id}")
         # Return the job ID to the client
-        return jsonify({"job_id": job.id})
+        return jsonify({"job_id": job.id, "status": "queued"})
     
     except Exception as e:
         logger.error(f"Error enqueuing job for {artist_name}: {str(e)}")
