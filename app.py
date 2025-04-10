@@ -45,11 +45,22 @@ CORS(app)
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 CACHE_TTL = int(os.getenv("CACHE_TTL", 86400)) # Cache TTL in seconds (default: 24 hours)
 
+# +++ Added logging for the REDIS_URL +++
+logger.info(f"Read REDIS_URL from environment: '{REDIS_URL}'")
+# +++ End logging add +++
+
 redis_conn = None
 q = None
 
 try:
     # Establish Redis connection for RQ
+    # +++ Added logging +++
+    logger.info(f"Attempting RQ Redis connection using URL: '{REDIS_URL}'")
+    # +++ Added validation block +++
+    if not REDIS_URL or not (REDIS_URL.startswith('redis://') or REDIS_URL.startswith('rediss://')):
+         logger.error(f"Invalid Redis URL scheme or URL is empty: '{REDIS_URL}'")
+         raise ValueError("Redis URL is missing or does not start with redis:// or rediss://")
+    # +++ End validation block +++
     redis_conn = redis.from_url(REDIS_URL)
     redis_conn.ping() # Check connection
     logger.info(f"Successfully connected to Redis for RQ at {REDIS_URL.split('@')[-1]}") # Avoid logging password
@@ -59,8 +70,16 @@ try:
     logger.info("RQ Queue initialized successfully.")
     
 except redis.exceptions.ConnectionError as e:
-    logger.error(f"Failed to connect to Redis for RQ: {e}. Background tasks will not be available.")
-    # Set q to None so that endpoints can check and return an error
+    # +++ Updated logging +++
+    logger.error(f"Failed to connect to Redis for RQ with URL '{REDIS_URL}': {e}. Background tasks will not be available.")
+    q = None
+# +++ Added specific ValueError catch +++
+except ValueError as e: # Catch the explicit validation error
+    logger.error(f"Failed due to invalid Redis URL '{REDIS_URL}' for RQ: {e}. Background tasks will not be available.")
+    q = None
+# +++ Added generic Exception catch +++
+except Exception as e: # Generic catch-all
+    logger.error(f"An unexpected error occurred during RQ Redis setup with URL '{REDIS_URL}': {e}", exc_info=True)
     q = None
 
 # Also establish a separate connection for general caching (optional but good practice)
@@ -68,11 +87,27 @@ except redis.exceptions.ConnectionError as e:
 redis_cache_client = None
 try:
     # Use decode_responses=False to store raw bytes/strings for flexibility
+    # +++ Added logging +++
+    logger.info(f"Attempting Cache Redis connection using URL: '{REDIS_URL}'")
+    # +++ Added validation block +++
+    if not REDIS_URL or not (REDIS_URL.startswith('redis://') or REDIS_URL.startswith('rediss://')):
+         logger.error(f"Invalid Redis URL scheme or URL is empty: '{REDIS_URL}'")
+         raise ValueError("Redis URL is missing or does not start with redis:// or rediss://")
+    # +++ End validation block +++
     redis_cache_client = redis.from_url(REDIS_URL, decode_responses=False)
     redis_cache_client.ping()
     logger.info(f"Successfully connected to Redis for general caching at {REDIS_URL.split('@')[-1]}")
 except redis.exceptions.ConnectionError as e:
-    logger.error(f"Failed to connect to Redis for caching: {e}. Caching features will be disabled.")
+    # +++ Updated logging +++
+    logger.error(f"Failed to connect to Redis for caching with URL '{REDIS_URL}': {e}. Caching features will be disabled.")
+    redis_cache_client = None
+# +++ Added specific ValueError catch +++
+except ValueError as e: # Catch the explicit validation error
+    logger.error(f"Failed due to invalid Redis URL '{REDIS_URL}' for caching: {e}. Caching features will be disabled.")
+    redis_cache_client = None
+# +++ Added generic Exception catch +++
+except Exception as e: # Generic catch-all
+    logger.error(f"An unexpected error occurred during Cache Redis setup with URL '{REDIS_URL}': {e}", exc_info=True)
     redis_cache_client = None
 
 @app.route("/")
