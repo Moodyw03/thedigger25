@@ -1,0 +1,8 @@
+INFO:__main__:Connecting to Redis at: redis://localhost:6379/0
+INFO:__main__:Connection attempt 1 to Redis at redis://localhost:6379/0
+INFO:__main__:Successfully connected to Redis
+INFO:__main__:Worker starting with 1 hour job timeout...
+INFO:rq.worker:Worker rq:worker:3ece569f9d794ef2a6b703041172d4bd started with PID 64746, version 2.2.0
+INFO:rq.worker:Subscribing to channel rq:pubsub:3ece569f9d794ef2a6b703041172d4bd
+INFO:rq.worker:*** Listening on default...
+INFO:rq.worker:Cleaning registries for queue: default

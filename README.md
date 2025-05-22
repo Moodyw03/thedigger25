@@ -89,7 +89,7 @@ Terminal 1 - Start the Flask application:
 Terminal 2 - Start the worker process:
 
 ```bash
-python worker_simple.py
+python worker.py
 ```
 
 With this setup, the Flask app handles web requests while the worker processes background jobs separately. This prevents long-running operations from blocking the web interface.

@@ -20,6 +20,8 @@ from dotenv import load_dotenv
 from track_formatter import format_track_for_pdf
 import json
 import redis # Add redis import for caching checks
+# Import the Discogs API client
+import discogs
 
 # RQ imports
 from redis import from_url as redis_from_url
@@ -598,47 +600,304 @@ def direct_pdf_download():
 def search_video():
     """Search for a YouTube video and return the video ID."""
     query = request.args.get("query", "")
+    source = request.args.get("source", "djset")  # djset or discogs - helps customize search
     
     if not query:
         return jsonify({"error": "Search query is required"}), 400
     
     # Check cache first
-    cache_key = query.lower()
+    cache_key = query.lower() + ":" + source
     current_time = time.time()
     
     if cache_key in video_id_cache:
         cached_item = video_id_cache[cache_key]
         # If the cache hasn't expired
         if current_time - cached_item["timestamp"] < CACHE_EXPIRY:
-            logger.info(f"Cache hit for query: {query}")
+            logger.info(f"Cache hit for query: {query} (source: {source})")
             return jsonify({"videoId": cached_item["video_id"]})
     
     try:
-        logger.info(f"Searching YouTube for: {query}")
+        logger.info(f"Searching YouTube for: {query} (source: {source})")
         
-        # Format query for YouTube search
-        search_query = urllib.parse.quote(query)
+        # Format query for YouTube search - ENHANCED ALGORITHM FOR EXACT MATCHING
+        enhanced_query = query
         
-        # Make request to YouTube search
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        response = requests.get(
-            f"https://www.youtube.com/results?search_query={search_query}",
-            headers=headers
-        )
+        # Parse artist and title if this is in the format "Artist - Title"
+        artist = None
+        title = None
+        label_info = None
+        catalog_num = None
+        release_year = None
         
-        if response.status_code != 200:
-            return jsonify({"error": f"YouTube search failed with status code: {response.status_code}"}), 500
+        # Extract additional context from query if available
+        if " - " in query:
+            # First clean up any bracketed track numbers at the beginning
+            cleaned_query = re.sub(r'^\s*\[\d+\]\s*', '', query)
+            
+            # Then try to split on artist-title separator
+            parts = cleaned_query.split(" - ", 1)
+            artist = parts[0].strip()
+            title = parts[1].strip()
+            
+            # Check if title has a label in square brackets at the end
+            label_in_title = re.search(r'\[([^\]]+)\]$', title)
+            if label_in_title:
+                label_info = label_in_title.group(1).strip()
+                # Remove the label part from the title
+                title = re.sub(r'\s*\[[^\]]+\]$', '', title).strip()
+            
+            # Extract catalog number if present (common formats: ABC-123, CATALOGUE123, etc.)
+            catalog_patterns = [
+                r'\b([A-Z0-9]+-?[A-Z0-9]+)\b',  # Standard format
+                r'\b([A-Z]{2,}[\s\-]?\d+[A-Z]?)\b',  # Extended format
+                r'([A-Z]+\d+[A-Z]*)',  # Compact format
+                r'(\d+[A-Z]+\d*)'  # Numeric prefix format
+            ]
+            
+            for pattern in catalog_patterns:
+                catalog_match = re.search(pattern, query)
+                if catalog_match:
+                    potential_catno = catalog_match.group(1)
+                    # Verify it's not just a common word
+                    if (len(potential_catno) >= 4 and 
+                        not potential_catno.lower() in ['remix', 'track', 'edit', 'version']):
+                        catalog_num = potential_catno
+                        break
+                        
+            # Extract year info if present (4 digits usually representing a year)
+            year_match = re.search(r'\b(19\d{2}|20\d{2})\b', query)
+            if year_match:
+                release_year = year_match.group(1)
+            
+            # Remove quotes if they exist
+            if artist.startswith('"') and artist.endswith('"'):
+                artist = artist[1:-1]
+            if title.startswith('"') and title.endswith('"'):
+                title = title[1:-1]
+                
+            # Clean up artist and title 
+            clean_title = re.sub(r'\s*\([^)]*\)\s*|\s*\[[^\]]*\]\s*', ' ', title).strip()
+            clean_artist = re.sub(r'\s*\([^)]*\)\s*|\s*\[[^\]]*\]\s*', ' ', artist).strip()
+            
+            # Create more targeted search queries
+            if "remix" in title.lower() or "mix" in title.lower():
+                # For remix tracks, include the remix info in the search
+                enhanced_query = f"{clean_artist} {title}"
+            else:
+                # For original tracks, use the cleaned title and artist
+                enhanced_query = f"{clean_artist} {clean_title}"
         
-        # Extract video ID using regex
-        video_ids = re.findall(r"watch\?v=(\S{11})", response.text)
+        # Determine music genre to optimize search
+        electronic_keywords = ["techno", "house", "trance", "dnb", "drum and bass", "dubstep", "ambient", 
+                              "electronica", "electronic", "edm", "dj", "remix", "club", "minimal",
+                              "deep", "experimental", "idm", "industrial"]
+                              
+        underground_labels = ["hessle audio", "hyperdub", "warp", "ostgut ton", "berghain", "perlon", 
+                            "planet mu", "r&s", "l.i.e.s", "pcp", "houndstooth", "bpitch", "tresor",
+                            "dekmantel", "hotflush", "clone", "stroboscopic", "livity sound", 
+                            "whities", "church", "ninja tune", "warp", "innervisions", "diynamic",
+                            "running back", "kompakt"]
+                            
+        is_electronic = (any(keyword in query.lower() for keyword in electronic_keywords) or 
+                        (label_info and any(label in label_info.lower() for label in underground_labels)))
+        is_underground = (label_info and any(label in label_info.lower() for label in underground_labels))
         
+        # Add specific genre tags to improve search relevance
+        if is_electronic:
+            # For underground electronic music, don't add "official" as many tracks don't have official videos
+            if "techno" in query.lower():
+                enhanced_query = f"{enhanced_query} techno"
+            elif "house" in query.lower():
+                enhanced_query = f"{enhanced_query} house"
+            elif "ambient" in query.lower():
+                enhanced_query = f"{enhanced_query} ambient"
+            elif "drum and bass" in query.lower() or "dnb" in query.lower():
+                enhanced_query = f"{enhanced_query} drum and bass"
+            else:
+                # Generic electronic music
+                enhanced_query = f"{enhanced_query} electronic"
+            
+            # Add "track" for electronic music to avoid mixes and playlists
+            if "track" not in enhanced_query.lower():
+                enhanced_query = f"{enhanced_query} track"
+        else:
+            # Add "music" for non-electronic music if not already present
+            if "music" not in enhanced_query.lower():
+                enhanced_query = f"{enhanced_query} music"
+            
+            # Only add "official" if it's likely to be a mainstream track
+            mainstream_keywords = ["pop", "rock", "official", "records", "vevo", "sony", "warner", "universal"]
+            is_mainstream = any(keyword in query.lower() for keyword in mainstream_keywords)
+            
+            if is_mainstream and "official" not in enhanced_query.lower():
+                enhanced_query = f"{enhanced_query} official"
+        
+        # Create multiple search queries to try in order of specificity
+        search_queries = []
+        
+        # Special handling for Discogs searches
+        if source == "discogs" and artist and title:
+            # Discogs searches should emphasize exact matching with catalog numbers
+            if catalog_num:
+                # 1. Most precise search includes catalog number which is highly specific
+                search_queries.append(f'"{artist}" "{title}" {catalog_num}')
+            
+            # 2. Add quoted artist and title for exact match
+            search_queries.append(f'"{artist}" "{title}"')
+            
+            # 3. Add label info for context
+            if label_info:
+                search_queries.append(f'"{artist}" "{title}" {label_info}')
+                
+            # 4. Add year for temporal context
+            if release_year:
+                search_queries.append(f'"{artist}" "{title}" {release_year}')
+                
+            # 5. Full context search
+            full_context = f'{artist} {title}'
+            if catalog_num:
+                full_context += f' {catalog_num}'
+            if label_info:
+                full_context += f' {label_info}'
+            if release_year:
+                full_context += f' {release_year}'
+            search_queries.append(full_context)
+        else:
+            # Regular DJ set searches
+            # 1. Most specific search with artist, title and extra context
+            if artist and title:
+                search_queries.append(enhanced_query)
+                
+                # 2. Add more specific query with quotes for exact match
+                exact_query = f'"{artist}" "{title}"'
+                if exact_query != enhanced_query:
+                    search_queries.append(exact_query)
+                
+                # 3. Add catalog number for better matching of specific releases
+                if catalog_num and catalog_num not in enhanced_query:
+                    search_queries.append(f"{artist} {title} {catalog_num}")
+                
+                # 4. Add very specific underground electronic query with label
+                if is_underground and label_info:
+                    search_queries.append(f"{artist} {title} {label_info}")
+        
+        # Fallback: original query
+        if enhanced_query not in search_queries:
+            search_queries.append(enhanced_query)
+        
+        logger.info(f"Search queries to try: {search_queries}")
+        
+        # Try each search query in order until we get good results
+        video_ids = []
+        used_query = None
+        search_url = None
+        
+        for search_query in search_queries:
+            encoded_query = urllib.parse.quote(search_query)
+            
+            # Make request to YouTube search
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            response = requests.get(
+                f"https://www.youtube.com/results?search_query={encoded_query}",
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                # Extract video IDs and check for exact matches
+                video_ids = re.findall(r"watch\?v=(\S{11})", response.text)
+                
+                if video_ids:
+                    used_query = search_query
+                    search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
+                    break
+        
+        # If no results found with any query, return an error
         if not video_ids:
-            return jsonify({"error": "No videos found"}), 404
+            return jsonify({"error": "No videos found for any search query"}), 404
         
-        # Get the first video ID
-        video_id = video_ids[0]
+        # Get unique video IDs - remove duplicates
+        unique_video_ids = list(dict.fromkeys(video_ids))
+        
+        # Filter out YouTube Mix/Playlist results to avoid long DJ mixes
+        filtered_ids = [vid for vid in unique_video_ids if "list=" not in response.text.split(vid)[1].split("<")[0]]
+        
+        # If no filtered IDs, use the unique IDs
+        if not filtered_ids:
+            filtered_ids = unique_video_ids
+        
+        # Look for exact matches in surrounding text with much larger context window
+        best_match_id = None
+        match_score = 0
+        
+        # Only perform advanced matching if we have both artist and title
+        if artist and title and len(filtered_ids) > 1:
+            # Check more results for precise matching
+            for vid_index, vid in enumerate(filtered_ids[:15]):  # Check top 15 results for thoroughness
+                # Find where this video ID appears in the response
+                vid_pos = response.text.find(vid)
+                if vid_pos > 0:
+                    # Get a much larger chunk of text around the ID for better context matching
+                    surrounding_text = response.text[max(0, vid_pos-400):min(len(response.text), vid_pos+400)].lower()
+                    
+                    # Calculate a match score for this result
+                    score = 0
+                    
+                    # Check for exact artist match
+                    if artist.lower() in surrounding_text:
+                        score += 20
+                        # Bonus for exact match with word boundaries
+                        if re.search(r'\b' + re.escape(artist.lower()) + r'\b', surrounding_text):
+                            score += 10
+                    
+                    # Check for exact title match
+                    if title.lower() in surrounding_text:
+                        score += 20
+                        # Bonus for exact match with word boundaries
+                        if re.search(r'\b' + re.escape(title.lower()) + r'\b', surrounding_text):
+                            score += 10
+                    
+                    # Enhanced checks for electronic music and discogs releases
+                    if catalog_num and catalog_num.lower() in surrounding_text:
+                        score += 25  # Catalog numbers are highly specific identifiers
+                    
+                    # Check for label information
+                    if label_info and label_info.lower() in surrounding_text:
+                        score += 15
+                    
+                    # For Discogs sources, give more weight to catalog number and label matches
+                    if source == "discogs":
+                        if catalog_num and catalog_num.lower() in surrounding_text:
+                            score += 10  # Extra boost for catalog match in discogs searches
+                        
+                        # Check for release year
+                        if release_year and release_year in surrounding_text:
+                            score += 10
+                    
+                    # Higher score for results that are closer to the top
+                    score += max(0, 10 - vid_index)
+                    
+                    # Update if this is the best match so far
+                    if score > match_score:
+                        match_score = score
+                        best_match_id = vid
+                        logger.info(f"Found better match: video ID {vid} with score {score}")
+            
+            # Only use the best match if it has a minimum score
+            # For Discogs, require a higher score threshold since we need more precision
+            min_score = 35 if source == "discogs" else 30
+            
+            if best_match_id and match_score >= min_score:
+                video_id = best_match_id
+                logger.info(f"Using best match: video ID {best_match_id} with score {match_score}")
+            else:
+                # Default to the first filtered ID
+                video_id = filtered_ids[0]
+                logger.info(f"No good exact match found, using first result: {video_id}")
+        else:
+            # For queries without artist/title separation, use the first result
+            video_id = filtered_ids[0]
         
         # Save to cache
         video_id_cache[cache_key] = {
@@ -646,7 +905,12 @@ def search_video():
             "timestamp": current_time
         }
         
-        return jsonify({"videoId": video_id})
+        # Return the video ID and search URL
+        return jsonify({
+            "videoId": video_id,
+            "query": used_query or enhanced_query,
+            "searchUrl": search_url or f"https://www.youtube.com/results?search_query={urllib.parse.quote(enhanced_query)}"
+        })
     
     except Exception as e:
         logger.error(f"Error searching YouTube: {str(e)}")
@@ -748,6 +1012,132 @@ def audio_proxy():
     except Exception as e:
         logger.error(f"Error proxying YouTube audio: {str(e)}")
         return jsonify({"error": f"Failed to extract audio: {str(e)}"}), 500
+
+# --- Discogs API Routes ---
+@app.route("/discogs/search_label")
+def search_label():
+    """Search for labels on Discogs"""
+    label_name = request.args.get('label_name', '')
+    page = request.args.get('page', 1, type=int)
+    
+    if not label_name:
+        return jsonify({"error": "Label name is required"}), 400
+    
+    try:
+        # Cache key for label search
+        cache_key = f"discogs_label_search:{label_name.lower().replace(' ', '_')}:{page}"
+        
+        # Check cache first if Redis is available
+        if redis_cache_client:
+            try:
+                cached_data = redis_cache_client.get(cache_key)
+                if cached_data:
+                    logger.info(f"Cache hit for Discogs label search: {label_name}, page {page}")
+                    return jsonify(json.loads(cached_data.decode('utf-8')))
+            except Exception as e:
+                logger.error(f"Redis error in label search: {str(e)}")
+        
+        # Cache miss or Redis not available, perform the search
+        data = discogs.search_labels(label_name, page=page)
+        
+        # Cache the results if Redis is available
+        if redis_cache_client:
+            try:
+                redis_cache_client.setex(
+                    cache_key,
+                    CACHE_TTL,
+                    json.dumps(data).encode('utf-8')
+                )
+            except Exception as e:
+                logger.error(f"Redis error caching label search: {str(e)}")
+        
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error in Discogs label search: {str(e)}")
+        return jsonify({"error": f"Failed to search Discogs: {str(e)}"}), 500
+
+@app.route("/discogs/label/<int:label_id>/releases")
+def label_releases(label_id):
+    """Get releases for a specific label from Discogs"""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    sort = request.args.get('sort', 'year')
+    sort_order = request.args.get('sort_order', 'desc')
+    
+    try:
+        # Cache key for label releases
+        cache_key = f"discogs_label_releases:{label_id}:{page}:{per_page}:{sort}:{sort_order}"
+        
+        # Check cache first if Redis is available
+        if redis_cache_client:
+            try:
+                cached_data = redis_cache_client.get(cache_key)
+                if cached_data:
+                    logger.info(f"Cache hit for Discogs label releases: {label_id}, page {page}")
+                    return jsonify(json.loads(cached_data.decode('utf-8')))
+            except Exception as e:
+                logger.error(f"Redis error in label releases: {str(e)}")
+        
+        # Cache miss or Redis not available, fetch the releases
+        data = discogs.get_label_releases(
+            label_id, 
+            page=page, 
+            per_page=per_page,
+            sort=sort,
+            sort_order=sort_order
+        )
+        
+        # Cache the results if Redis is available
+        if redis_cache_client:
+            try:
+                redis_cache_client.setex(
+                    cache_key,
+                    CACHE_TTL,
+                    json.dumps(data).encode('utf-8')
+                )
+            except Exception as e:
+                logger.error(f"Redis error caching label releases: {str(e)}")
+        
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error in Discogs label releases: {str(e)}")
+        return jsonify({"error": f"Failed to get Discogs releases: {str(e)}"}), 500
+
+@app.route("/discogs/release/<int:release_id>")
+def release_details(release_id):
+    """Get detailed information about a specific release"""
+    try:
+        # Cache key for release details
+        cache_key = f"discogs_release:{release_id}"
+        
+        # Check cache first if Redis is available
+        if redis_cache_client:
+            try:
+                cached_data = redis_cache_client.get(cache_key)
+                if cached_data:
+                    logger.info(f"Cache hit for Discogs release: {release_id}")
+                    return jsonify(json.loads(cached_data.decode('utf-8')))
+            except Exception as e:
+                logger.error(f"Redis error in release details: {str(e)}")
+        
+        # Cache miss or Redis not available, fetch the release details
+        data = discogs.get_release_details(release_id)
+        
+        # Cache the results if Redis is available
+        if redis_cache_client:
+            try:
+                redis_cache_client.setex(
+                    cache_key,
+                    CACHE_TTL,
+                    json.dumps(data).encode('utf-8')
+                )
+            except Exception as e:
+                logger.error(f"Redis error caching release details: {str(e)}")
+        
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error in Discogs release details: {str(e)}")
+        return jsonify({"error": f"Failed to get Discogs release: {str(e)}"}), 500
 
 # Main entry point for development server (not used by Gunicorn)
 if __name__ == "__main__":
