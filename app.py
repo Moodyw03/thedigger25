@@ -645,24 +645,39 @@ def search_video():
                 label_info = label_in_title.group(1).strip()
                 # Remove the label part from the title
                 title = re.sub(r'\s*\[[^\]]+\]$', '', title).strip()
+                
+                # Check if label_info contains a label and catalog number separated by dash
+                if " - " in label_info:
+                    label_parts = label_info.split(" - ", 1)
+                    # If the second part looks like a catalog number (contains digits)
+                    if re.search(r'\d', label_parts[1]):
+                        label_info = label_parts[0].strip()
+                        catalog_num = label_parts[1].strip()
+                    else:
+                        # Otherwise assume first part might be catalog
+                        if re.search(r'\d', label_parts[0]):
+                            catalog_num = label_parts[0].strip()
+                            label_info = label_parts[1].strip()
             
-            # Extract catalog number if present (common formats: ABC-123, CATALOGUE123, etc.)
-            catalog_patterns = [
-                r'\b([A-Z0-9]+-?[A-Z0-9]+)\b',  # Standard format
-                r'\b([A-Z]{2,}[\s\-]?\d+[A-Z]?)\b',  # Extended format
-                r'([A-Z]+\d+[A-Z]*)',  # Compact format
-                r'(\d+[A-Z]+\d*)'  # Numeric prefix format
-            ]
-            
-            for pattern in catalog_patterns:
-                catalog_match = re.search(pattern, query)
-                if catalog_match:
-                    potential_catno = catalog_match.group(1)
-                    # Verify it's not just a common word
-                    if (len(potential_catno) >= 4 and 
-                        not potential_catno.lower() in ['remix', 'track', 'edit', 'version']):
-                        catalog_num = potential_catno
-                        break
+            # If no catalog number found yet, try additional patterns
+            if not catalog_num:
+                # Extract catalog number if present (common formats: ABC-123, CATALOGUE123, etc.)
+                catalog_patterns = [
+                    r'\b([A-Z0-9]+-?[A-Z0-9]+)\b',  # Standard format
+                    r'\b([A-Z]{2,}[\s\-]?\d+[A-Z]?)\b',  # Extended format
+                    r'([A-Z]+\d+[A-Z]*)',  # Compact format
+                    r'(\d+[A-Z]+\d*)'  # Numeric prefix format
+                ]
+                
+                for pattern in catalog_patterns:
+                    catalog_match = re.search(pattern, query)
+                    if catalog_match:
+                        potential_catno = catalog_match.group(1)
+                        # Verify it's not just a common word
+                        if (len(potential_catno) >= 4 and 
+                            not potential_catno.lower() in ['remix', 'track', 'edit', 'version']):
+                            catalog_num = potential_catno
+                            break
                         
             # Extract year info if present (4 digits usually representing a year)
             year_match = re.search(r'\b(19\d{2}|20\d{2})\b', query)
@@ -696,11 +711,11 @@ def search_video():
                             "planet mu", "r&s", "l.i.e.s", "pcp", "houndstooth", "bpitch", "tresor",
                             "dekmantel", "hotflush", "clone", "stroboscopic", "livity sound", 
                             "whities", "church", "ninja tune", "warp", "innervisions", "diynamic",
-                            "running back", "kompakt"]
+                            "running back", "kompakt", "aniara"]
                             
         is_electronic = (any(keyword in query.lower() for keyword in electronic_keywords) or 
-                        (label_info and any(label in label_info.lower() for label in underground_labels)))
-        is_underground = (label_info and any(label in label_info.lower() for label in underground_labels))
+                        (label_info and any(label.lower() in label_info.lower() for label in underground_labels)))
+        is_underground = (label_info and any(label.lower() in label_info.lower() for label in underground_labels))
         
         # Add specific genre tags to improve search relevance
         if is_electronic:
@@ -776,7 +791,7 @@ def search_video():
                 # 3. Add catalog number for better matching of specific releases
                 if catalog_num and catalog_num not in enhanced_query:
                     search_queries.append(f"{artist} {title} {catalog_num}")
-                
+                    
                 # 4. Add very specific underground electronic query with label
                 if is_underground and label_info:
                     search_queries.append(f"{artist} {title} {label_info}")

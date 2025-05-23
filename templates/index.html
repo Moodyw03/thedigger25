@@ -1748,7 +1748,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 errorDiv.style.display = 'block';
                 errorDiv.innerHTML = `
                         <i class="player-error-icon">⚠️</i> ${errorMsg}
-                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(trackItem.querySelector('.track-name').textContent)}" 
+                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(trackItem.querySelector('.track-name').textContent)}&autoplay=1" 
                            target="_blank" style="color: #fff; text-decoration: underline; margin-left: 10px;">
                            Try on YouTube
                         </a>
@@ -1846,23 +1846,55 @@ document.addEventListener('DOMContentLoaded', function() {
             let artist = null;
             let title = null;
             let label = null;
+            let catalog = null;
             let isVinyl = false;
             
             // For patterns like "[43] Artist - Title [Label]", extract the useful parts
             let formattedQuery = searchQuery;
             
-            // First, extract any label info in square brackets at the end
-            const labelMatch = formattedQuery.match(/\[([^\]]+)\]$/);
-            if (labelMatch) {
-                label = labelMatch[1].trim();
+            // First, remove any track number prefix like [01] or [001]
+            formattedQuery = formattedQuery.replace(/^\s*\[\d+\]\s*/, '').trim();
+            
+            // Extract catalog number and label in brackets at the end [Label - Catalog]
+            const labelCatalogMatch = formattedQuery.match(/\[([^\]]+)\]$/);
+            if (labelCatalogMatch) {
+                // Extract the content inside brackets
+                const bracketContent = labelCatalogMatch[1].trim();
+                
+                // Check if the content has a separator
+                if (bracketContent.includes(' - ')) {
+                    const parts = bracketContent.split(' - ');
+                    label = parts[0].trim();
+                    catalog = parts[1].trim();
+                    
+                    // Log extracted values
+                    console.log("Extracted Artist:", artist || "Not found");
+                    console.log("Extracted Title:", title || "Not found");
+                    console.log("Extracted Label:", label || "Not found");
+                    console.log("Extracted Catalog:", catalog || "Not found");
+                } else {
+                    // Assume it's just the label
+                    label = bracketContent;
+                    console.log("Extracted Artist:", artist || "Not found");
+                    console.log("Extracted Title:", title || "Not found");
+                    console.log("Extracted Label:", label || "Not found");
+                }
+                
                 formattedQuery = formattedQuery.replace(/\[([^\]]+)\]$/, '').trim();
+            } else {
+                // Try to match a simple [Label] pattern
+                const simpleLabelMatch = formattedQuery.match(/\[([^\]]+)\]$/);
+                if (simpleLabelMatch) {
+                    label = simpleLabelMatch[1].trim();
+                    formattedQuery = formattedQuery.replace(/\[([^\]]+)\]$/, '').trim();
+                    console.log("Extracted Artist:", artist || "Not found");
+                    console.log("Extracted Title:", title || "Not found");
+                    console.log("Extracted Label:", label || "Not found");
+                }
             }
             
             // Check for vinyl-specific tags
             isVinyl = /vinyl|12"|12 inch|ep|lp|white label/i.test(searchQuery);
-            
-            // Then remove any track number prefix like [01] or [001]
-            formattedQuery = formattedQuery.replace(/^\s*\[\d+\]\s*/, '').trim();
             
             // Handle specialized format patterns
             if (formattedQuery.includes('id:') && formattedQuery.includes('track:')) {
@@ -1877,6 +1909,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (byMatch) {
                     title = byMatch[1].trim();
                     artist = byMatch[2].split(',')[0].trim();
+                    formattedQuery = `${artist} - ${title}`;
+                }
+            }
+            
+            // Handle inverted "Artist - Track (Remixer Remix)" format
+            if (!formattedQuery.includes(' - ') && formattedQuery.includes('(') && formattedQuery.match(/\([^)]*remix/i)) {
+                const parts = formattedQuery.split(' ');
+                // Assume the last name before parenthesis is the artist
+                const titleEndIndex = formattedQuery.indexOf('(') - 1;
+                if (titleEndIndex > 0) {
+                    artist = formattedQuery.substring(0, titleEndIndex).trim();
+                    title = formattedQuery.substring(titleEndIndex).trim();
                     formattedQuery = `${artist} - ${title}`;
                 }
             }
@@ -1900,47 +1944,84 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log("Extracted Artist:", artist || "Not found");
             console.log("Extracted Title:", title || "Not found");
             console.log("Extracted Label:", label || "Not found");
+            console.log("Extracted Catalog:", catalog || "Not found");
             
             // Build the final search query
+            let enhancedSearchQuery = '';
             if (artist && title) {
-                // Use artist and title if we have both
-                searchQuery = `${artist} - ${title}`;
+                // Use artist and title if we have both (primary search)
+                enhancedSearchQuery = `${artist} - ${title}`;
             } else {
                 // Otherwise use cleaned formattedQuery
-                searchQuery = formattedQuery;
+                enhancedSearchQuery = formattedQuery;
             }
             
             // Ensure we don't have an empty query
-            if (!searchQuery.trim()) {
+            if (!enhancedSearchQuery.trim()) {
                 // If everything was removed, revert to original query with minimal cleaning
-                searchQuery = decodeURIComponent(query)
+                enhancedSearchQuery = decodeURIComponent(query)
                     .replace(/^\[\d+\]\s*/, '')
                     .replace(/\[[^\]]*\]$/, '')
                     .trim();
             }
             
-            // Add label for context with electronic music
-            if (label && (isVinyl || /techno|house|electronic|dub|ambient|minimal/i.test(searchQuery))) {
-                if (!searchQuery.includes(label)) {
-                    searchQuery = `${searchQuery} ${label}`;
+            // Add label for context with electronic music if appropriate
+            if (label && (isVinyl || /techno|house|electronic|dub|ambient|minimal/i.test(enhancedSearchQuery))) {
+                if (!enhancedSearchQuery.toLowerCase().includes(label.toLowerCase())) {
+                    enhancedSearchQuery = `${enhancedSearchQuery} ${label}`;
                 }
             }
             
-            console.log("Enhanced query for YouTube:", searchQuery);
-            console.log("Artist:", artist || "Unknown");
-            console.log("Title:", title || "Unknown");
-            if (label) console.log("Label:", label);
+            console.log("Enhanced query for YouTube:", enhancedSearchQuery);
             
-            const response = await fetch(`/search_video?query=${encodeURIComponent(searchQuery)}&source=djset`);
+            // Try primary search with our enhanced query
+            const response = await fetch(`/search_video?query=${encodeURIComponent(enhancedSearchQuery)}&source=djset`);
             
-                            if (!response.ok) {
+            if (!response.ok) {
                 throw new Error(`YouTube search failed: ${response.statusText}`);
             }
             
             const data = await response.json();
             
+            // If no video found and we have both artist and title, try a more specific search
+            if (!data.videoId && artist && title) {
+                // Try with quotes for exact matching
+                const exactSearchQuery = `"${artist}" "${title}"`;
+                console.log("Trying exact search:", exactSearchQuery);
+                
+                const exactResponse = await fetch(`/search_video?query=${encodeURIComponent(exactSearchQuery)}&source=djset`);
+                
+                if (exactResponse.ok) {
+                    const exactData = await exactResponse.json();
+                    if (exactData.videoId) {
+                        console.log("Found match with exact search");
+                        Object.assign(data, exactData);
+                    }
+                }
+            }
+            
+            // If still no results, try with just the title (common issue with DJ sets)
+            if (!data.videoId && title) {
+                const titleOnlyQuery = title;
+                console.log("Trying title-only search:", titleOnlyQuery);
+                
+                const titleResponse = await fetch(`/search_video?query=${encodeURIComponent(titleOnlyQuery)}&source=djset`);
+                
+                if (titleResponse.ok) {
+                    const titleData = await titleResponse.json();
+                    if (titleData.videoId) {
+                        console.log("Found match with title-only search");
+                        Object.assign(data, titleData); 
+                    }
+                }
+            }
+            
             // Play the video
             const youtubeId = data.videoId;
+            
+            if (!youtubeId) {
+                throw new Error("No YouTube video found for this track");
+            }
             
             // If we're in a track item (DJ sets), use an inline player
             if (trackItem) {
@@ -2045,7 +2126,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             <iframe id="${playerId}" 
                                 width="100%" 
                                 height="90" 
-                                src="https://www.youtube.com/embed/${youtubeId}?autoplay=1&start=150&enablejsapi=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&fs=0&modestbranding=1" 
+                                src="https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=0&start=120&enablejsapi=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&fs=0&modestbranding=1" 
+                                title="YouTube video player"
                                 frameborder="0" 
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                                 allowfullscreen
@@ -2054,9 +2136,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             </iframe>
                         </div>
                         <div class="audio-controls">
-                            <div class="time-display" id="time-display-${playerId}">2:30 / 0:00</div>
+                            <div class="time-display" id="time-display-${playerId}">2:00 / 0:00</div>
                             <div class="player-actions">
-                            <a href="https://www.youtube.com/watch?v=${youtubeId}&t=150" target="_blank" class="youtube-link">
+                            <a href="https://www.youtube.com/watch?v=${youtubeId}&t=120&autoplay=1" target="_blank" style="margin-right: 15px;" class="youtube-link">
                                 <i class="youtube-icon">▶</i> Open in YouTube
                             </a>
                                 <button class="retry-button" style="display:none;" data-query="${encodeURIComponent(searchQuery)}" data-player-id="${playerId}">
@@ -2071,10 +2153,47 @@ document.addEventListener('DOMContentLoaded', function() {
                         try {
                             if (window.YT && window.YT.Player) {
                                 // If YT API is ready, create a player instance for this iframe
-                                new YT.Player(playerId, {
+                                const player = new YT.Player(playerId, {
+                                    height: '360',
+                                    width: '640',
+                                    videoId: youtubeId,
+                                    playerVars: {
+                                        autoplay: 1,
+                                        mute: 0,
+                                        start: 120, // Start at 2:00
+                                        enablejsapi: 1,
+                                        origin: window.location.origin,
+                                        playsinline: 1,
+                                        modestbranding: 1,
+                                        rel: 0
+                                    },
                                     events: {
                                         'onReady': function(event) {
                                             console.log("YouTube player ready:", playerId);
+                                            // Force play when ready
+                                            event.target.playVideo();
+                                            event.target.unMute();
+                                            
+                                            // Sometimes the YouTube API doesn't start playing properly
+                                            // Try multiple attempts to ensure playback
+                                            let playAttempts = 0;
+                                            const maxPlayAttempts = 5;
+                                            const ensurePlayback = function() {
+                                                if (playAttempts >= maxPlayAttempts) return;
+                                                
+                                                const state = event.target.getPlayerState();
+                                                // If not playing (1), try to play again
+                                                if (state !== 1) {
+                                                    console.log(`Retry play attempt ${playAttempts+1} for ${playerId}`);
+                                                    event.target.playVideo();
+                                                    event.target.unMute();
+                                                    playAttempts++;
+                                                    setTimeout(ensurePlayback, 1000);
+                                                }
+                                            };
+                                            
+                                            // Start checking playback
+                                            setTimeout(ensurePlayback, 500);
                                         },
                                         'onStateChange': function(event) {
                                             // Update button state based on player state
@@ -2087,8 +2206,21 @@ document.addEventListener('DOMContentLoaded', function() {
                                                 } else if (event.data === 2) { // paused
                                                     playButton.innerHTML = '<span class="playing-indicator">▶ Resume</span>';
                                                     playButton.dataset.playerState = 'paused';
+                                                } else if (event.data === 0) { // ended
+                                                    playButton.innerHTML = '<span class="playing-indicator">▶ Replay</span>';
+                                                    playButton.dataset.playerState = 'ended';
                                                 }
                                             }
+                                        },
+                                        'onError': function(event) {
+                                            console.error(`YouTube player error (${playerId}):`, event.data);
+                                            // Try to recover by opening direct YouTube search in new tab
+                                            const searchTerm = trackItem.querySelector('.track-name').textContent;
+                                            const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}&autoplay=1&mute=0`;
+                                            window.open(searchUrl, '_blank');
+                                            
+                                            // Show error message
+                                            handleVideoError(trackItem, "Video playback error - opened search in new tab");
                                         }
                                     }
                                 });
@@ -2106,8 +2238,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
                     }
                     
-                    // Start timer at 150 seconds (2:30)
-                    let currentTime = 150; 
+                    // Start timer at 120 seconds (2:00)
+                    let currentTime = 120; 
                     const timeDisplayElement = document.getElementById(`time-display-${playerId}`);
                     
                     // We don't know the actual duration yet, using placeholder
@@ -2197,12 +2329,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                                 const newPlayerId = this.dataset.playerId;
                                                 const iframe = document.getElementById(newPlayerId);
                                                 if (iframe) {
-                                                    iframe.src = `https://www.youtube.com/embed/${data.videoId}?autoplay=1&start=150&enablejsapi=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&fs=0&modestbranding=1`;
+                                                    iframe.src = `https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=0&start=120&enablejsapi=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&fs=0&modestbranding=1`;
                                                     
                                                     // Update YouTube link
                                                     const ytLink = playerContainer.querySelector('.youtube-link');
                                                     if (ytLink) {
-                                                        ytLink.href = `https://www.youtube.com/watch?v=${data.videoId}&t=150`;
+                                                        ytLink.href = `https://www.youtube.com/watch?v=${data.videoId}&t=120&autoplay=1`;
                                                     }
                                                     
                                                     // Hide retry button
@@ -2249,7 +2381,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Load and play the new video
                     window.ytPlayer.loadVideoById({
                         videoId: youtubeId,
-                        startSeconds: 150 // Start at 2:30
+                        startSeconds: 120 // Start at 2:00
                     });
                     
                     // Reset and start timer for the modal player
@@ -2257,7 +2389,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         clearInterval(window.modalPlayerTimer);
                     }
                     
-                    let currentTime = 150; // Start at 2:30
+                    let currentTime = 120; // Start at 2:00
                     const duration = 240; // Average track length of 4 minutes
                     const timeDisplay = document.getElementById('modal-time-display');
                     if (timeDisplay) {
@@ -2283,8 +2415,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         </div>
                         <div class="player-controls">
-                            <div id="modal-time-display" class="time-display" style="margin-right: auto; padding: 5px 10px;">2:30 / 0:00</div>
-                            <a href="https://www.youtube.com/watch?v=${youtubeId}&t=150" target="_blank" style="margin-right: 15px;" class="youtube-link">
+                            <div id="modal-time-display" class="time-display" style="margin-right: auto; padding: 5px 10px;">2:00 / 0:00</div>
+                            <a href="https://www.youtube.com/watch?v=${youtubeId}&t=120&autoplay=1" target="_blank" style="margin-right: 15px;" class="youtube-link">
                                 <i class="youtube-icon">▶</i> Open in YouTube
                             </a>
                             <button id="close-player">Close Player</button>
@@ -2321,7 +2453,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             videoId: youtubeId,
                             playerVars: {
                                 autoplay: 1,
-                                start: 150, // Start at 2:30
+                                mute: 0,
+                                start: 120, // Start at 2:00
                                 enablejsapi: 1,
                                 origin: window.location.origin,
                                 playsinline: 1,
@@ -2332,9 +2465,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                 'onReady': function(event) {
                                     // Force play when ready
                                     event.target.playVideo();
+                                    event.target.unMute(); // Ensure sound is on
                                     
                                     // Start timer
-                                    let currentTime = 150; // Start at 2:30
+                                    let currentTime = 120; // Start at 2:00
                                     const duration = 240; // Average track length of 4 minutes
                                     const timeDisplay = document.getElementById('modal-time-display');
                                     if (timeDisplay) {
@@ -2363,7 +2497,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     <li>- YouTube API limitations</li>
                                                 </ul>
                                                 <p>
-                                                    <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}" 
+                                                    <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}&autoplay=1" 
                                                        target="_blank" style="color: #fff; text-decoration: underline;">
                                                        Try searching directly on YouTube
                                                     </a>
@@ -2522,7 +2656,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Load and play the new video in the existing player
                 window.ytPlayer.loadVideoById({
                     videoId: youtubeId,
-                    startSeconds: 150 // Start at 2:30
+                    startSeconds: 120 // Start at 2:00
                 });
                 
                 // Update player title
@@ -2547,7 +2681,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     clearInterval(window.modalPlayerTimer);
                 }
                 
-                let currentTime = 150; // Start at 2:30
+                let currentTime = 120; // Start at 2:00
                 const duration = 240; // Average track length of 4 minutes
                 const timeDisplay = document.getElementById('modal-time-display');
                 if (timeDisplay) {
@@ -2577,7 +2711,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                     <div class="player-controls">
-                        <div id="modal-time-display" class="time-display" style="margin-right: auto; padding: 5px 10px;">2:30 / 0:00</div>
+                        <div id="modal-time-display" class="time-display" style="margin-right: auto; padding: 5px 10px;">2:00 / 0:00</div>
                         <a href="${searchUrl}" target="_blank" style="margin-right: 15px;" class="youtube-link">
                             <i class="youtube-icon">▶</i> Search Other Versions
                         </a>
@@ -2618,7 +2752,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         videoId: youtubeId,
                         playerVars: {
                             autoplay: 1,
-                            start: 150, // Start at 2:30
+                            mute: 0,
+                            start: 120, // Start at 2:00
                             enablejsapi: 1,
                             origin: window.location.origin,
                             playsinline: 1,
@@ -2629,9 +2764,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             'onReady': function(event) {
                                 // Force play when ready
                                 event.target.playVideo();
+                                event.target.unMute(); // Ensure sound is on
                                 
                                 // Start timer
-                                let currentTime = 150; // Start at 2:30
+                                let currentTime = 120; // Start at 2:00
                                 const duration = 240; // Average track length of 4 minutes
                                 const timeDisplay = document.getElementById('modal-time-display');
                                 if (timeDisplay) {
@@ -2660,7 +2796,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                                 <li>- YouTube API limitations</li>
                                             </ul>
                                             <p>
-                                                <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}" 
+                                                <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}&autoplay=1" 
                                                    target="_blank" style="color: #fff; text-decoration: underline;">
                                                    Try searching directly on YouTube
                                                 </a>
