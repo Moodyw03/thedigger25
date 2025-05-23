@@ -1528,9 +1528,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             </p>
                         </div>
                         <div class="release-actions">
-                            <button class="play-track-btn" data-query="${encodeURIComponent(`${artistName} - ${title}`)}">
-                                <span class="play-icon">▶</span> Play
-                            </button>
                             <button class="youtube-btn" data-query="${encodeURIComponent(`${artistName} - ${title}`)}"
                                 data-year="${year}" data-catalog="${catno}" data-label="${labelName}">
                                 <i class="youtube-icon">▶</i> YouTube
@@ -1680,18 +1677,13 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </p>
                                 <p class="release-format">${releaseData.formats ? releaseData.formats.map(f => f.name + (f.descriptions ? ' - ' + f.descriptions.join(', ') : '')).join(', ') : ''}</p>
                                 
-                                <button class="play-album-btn" 
-                                    data-query="${encodeURIComponent(`${releaseData.artists_sort} - ${releaseData.title}`)}"
-                                    data-artist="${encodeURIComponent(releaseData.artists_sort)}"
-                                    data-title="${encodeURIComponent(releaseData.title)}"
-                                    data-catno="${encodeURIComponent(releaseData.labels ? releaseData.labels[0].catno : '')}"
-                                    data-label="${encodeURIComponent(releaseData.labels ? releaseData.labels[0].name : '')}"
-                                    data-year="${encodeURIComponent(releaseData.year || '')}">
-                                    <span class="play-icon">▶</span> Play Album
-                                </button>
-                                <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${releaseData.artists_sort} - ${releaseData.title}`)}&autoplay=1" 
-                                    target="_blank" class="youtube-link" style="margin-left: 10px;">
-                                    <i class="youtube-icon">▶</i> Open on YouTube
+                                <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(`"${releaseData.artists_sort}" "${releaseData.title}" ${releaseData.labels ? releaseData.labels[0].name : ''} ${releaseData.labels ? releaseData.labels[0].catno : ''}`)}&autoplay=1" 
+                                    target="_blank" class="youtube-btn" style="display: inline-block; background-color: #000000; color: #ffffff; border: 3px solid #000; padding: 8px 16px; font-family: 'Courier Prime', monospace; font-size: 0.9rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; text-decoration: none;">
+                                    <span class="play-icon">▶</span> Find on YouTube
+                                </a>
+                                <a href="https://www.discogs.com/release/${releaseId}" 
+                                    target="_blank" style="margin-left: 10px; display: inline-block; background-color: #333; color: #fff; padding: 8px 16px; font-family: 'Courier Prime', monospace; font-size: 0.9rem; text-decoration: none;">
+                                    <i class="icon">📀</i> View on Discogs
                                 </a>
                             </div>
                         </div>
@@ -1716,19 +1708,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <div class="track-title">${track.title}</div>
                                     <div class="track-duration">${track.duration || ''}</div>
                                     <div class="track-actions">
-                                        <button class="play-track-btn" 
-                                            data-query="${encodeURIComponent(`${trackArtist} - ${track.title}`)}"
-                                            data-artist="${encodeURIComponent(trackArtist)}"
-                                            data-title="${encodeURIComponent(track.title)}"
-                                            data-catno="${encodeURIComponent(releaseData.labels ? releaseData.labels[0].catno : '')}"
-                                            data-label="${encodeURIComponent(releaseData.labels ? releaseData.labels[0].name : '')}"
-                                            data-year="${encodeURIComponent(releaseData.year || '')}">
-                                            <span class="play-icon">▶</span> Play
-                                        </button>
-                                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${trackArtist} - ${track.title}`)}&autoplay=1" 
-                                            target="_blank" class="youtube-link" style="margin-left: 5px;">
-                                            <i class="youtube-icon">▶</i> YouTube
+                                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(`"${trackArtist}" "${track.title}" ${releaseData.labels ? releaseData.labels[0].catno : ''} ${releaseData.year || ''}`)}&autoplay=1" 
+                                            target="_blank" class="youtube-btn" style="display: inline-block; background-color: #000; color: #fff; border: none; padding: 4px 8px; font-family: 'Courier Prime', monospace; font-size: 0.8rem; text-decoration: none;">
+                                            <i class="youtube-icon">▶</i> Find on YouTube
                                         </a>
+                                        
                                     </div>
                                 </li>
                             `;
