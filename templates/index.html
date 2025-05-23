@@ -1531,6 +1531,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             <button class="play-track-btn" data-query="${encodeURIComponent(`${artistName} - ${title}`)}">
                                 <span class="play-icon">▶</span> Play
                             </button>
+                            <button class="youtube-btn" data-query="${encodeURIComponent(`${artistName} - ${title}`)}"
+                                data-year="${year}" data-catalog="${catno}" data-label="${labelName}">
+                                <i class="youtube-icon">▶</i> YouTube
+                            </button>
                             <button class="view-details-btn" data-id="${release.id}">
                                 Details
                             </button>
@@ -1579,6 +1583,67 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
         
+        // Add event listeners for the YouTube buttons
+        document.querySelectorAll('.youtube-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const query = this.getAttribute('data-query');
+                const year = this.getAttribute('data-year');
+                const catalog = this.getAttribute('data-catalog');
+                const label = this.getAttribute('data-label');
+                
+                // Create an enhanced search query with all available metadata
+                let enhancedQuery = query;
+                
+                // Separate into artist and title if possible for more precise searching
+                let artist = '';
+                let title = '';
+                if (query.includes(' - ')) {
+                    [artist, title] = query.split(' - ').map(part => part.trim());
+                    
+                    // Use quotes for exact matching
+                    enhancedQuery = `"${artist}" "${title}"`;
+                } else {
+                    // If no clear artist-title format, use the original query with quotes
+                    enhancedQuery = `"${query}"`;
+                }
+                
+                // Build the final query with additional metadata
+                let searchQuery = enhancedQuery;
+                
+                // Add catalog number which is highly specific for electronic music
+                if (catalog && !searchQuery.includes(catalog)) {
+                    searchQuery += ` ${catalog}`;
+                }
+                
+                // Add label information which helps identify exact releases
+                if (label && !searchQuery.toLowerCase().includes(label.toLowerCase())) {
+                    searchQuery += ` "${label}"`;
+                }
+                
+                // Add year for better temporal context
+                if (year && !searchQuery.includes(year)) {
+                    searchQuery += ` ${year}`;
+                }
+                
+                // For better quality YouTube search results, add these terms
+                const isElectronic = /techno|house|electronic|ambient|dub|experimental/i.test(query + " " + label);
+                if (isElectronic) {
+                    // For electronic music, add vinyl/track terms for better results
+                    if (!searchQuery.toLowerCase().includes('vinyl') && !searchQuery.toLowerCase().includes('track')) {
+                        searchQuery += ' vinyl';
+                    }
+                } else {
+                    // For non-electronic, add 'official' for better results
+                    if (!searchQuery.toLowerCase().includes('official')) {
+                        searchQuery += ' official';
+                    }
+                }
+                
+                // Open YouTube in a new tab with autoplay
+                window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}&autoplay=1`, '_blank');
+            });
+        });
+        
         // Add event listeners for release details buttons
         document.querySelectorAll('.view-details-btn').forEach(button => {
             button.addEventListener('click', async function() {
@@ -1624,6 +1689,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                     data-year="${encodeURIComponent(releaseData.year || '')}">
                                     <span class="play-icon">▶</span> Play Album
                                 </button>
+                                <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${releaseData.artists_sort} - ${releaseData.title}`)}&autoplay=1" 
+                                    target="_blank" class="youtube-link" style="margin-left: 10px;">
+                                    <i class="youtube-icon">▶</i> Open on YouTube
+                                </a>
                             </div>
                         </div>
                     `;
@@ -1656,6 +1725,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                             data-year="${encodeURIComponent(releaseData.year || '')}">
                                             <span class="play-icon">▶</span> Play
                                         </button>
+                                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${trackArtist} - ${track.title}`)}&autoplay=1" 
+                                            target="_blank" class="youtube-link" style="margin-left: 5px;">
+                                            <i class="youtube-icon">▶</i> YouTube
+                                        </a>
                                     </div>
                                 </li>
                             `;
@@ -2559,7 +2632,14 @@ document.addEventListener('DOMContentLoaded', function() {
             loadingContainer.id = 'discogs-loading-container';
             loadingContainer.innerHTML = `
                 <div style="position: fixed; top: 0; left: 0; right: 0; padding: 10px; background-color: #000; color: #fff; text-align: center; z-index: 9999; font-family: 'Courier Prime', monospace;">
-                    Searching YouTube for: ${query} <span style="display: inline-block; animation: spin 1s infinite linear;">⏳</span>
+                    <div style="font-weight: bold;">Searching for exact track match:</div>
+                    <div>${query}</div>
+                    <div style="font-size: 12px; margin-top: 5px; opacity: 0.8;">
+                        ${releaseInfo && releaseInfo.catno ? `Catalog: ${releaseInfo.catno} | ` : ''}
+                        ${releaseInfo && releaseInfo.label ? `Label: ${releaseInfo.label} | ` : ''}
+                        ${releaseInfo && releaseInfo.year ? `Year: ${releaseInfo.year}` : ''}
+                    </div>
+                    <div style="margin-top: 5px;"><span style="display: inline-block; animation: spin 1s infinite linear;">⏳</span> Finding accurate match...</div>
                 </div>
             `;
             document.body.appendChild(loadingContainer);
@@ -2581,13 +2661,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Clean up artist and title
             if (artist) {
-                // Remove anything in parentheses from artist
-                artist = artist.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+                // Remove anything in parentheses from artist but preserve important identifiers
+                artist = artist.replace(/\s*\((?!.*?(remix|mix|version|edit|remaster|feat|ft))([^)]*)\)\s*/gi, ' ').trim();
             }
             
             if (title) {
-                // Remove anything in parentheses from title
-                title = title.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+                // Remove anything in parentheses from title but preserve important identifiers
+                title = title.replace(/\s*\((?!.*?(remix|mix|version|edit|remaster|feat|ft))([^)]*)\)\s*/gi, ' ').trim();
             }
             
             // Create exact artist/title query with quotes for more precise matching
@@ -2603,6 +2683,12 @@ document.addEventListener('DOMContentLoaded', function() {
             // Add release information for better context
             let contextParams = '';
             if (releaseInfo) {
+                // Add artist name if available and not already in the query
+                if (releaseInfo.artist && !preciseQuery.toLowerCase().includes(releaseInfo.artist.toLowerCase())) {
+                    preciseQuery = `${releaseInfo.artist} - ${preciseQuery}`;
+                    contextParams += ` by ${releaseInfo.artist}`;
+                }
+                
                 // Add catalog number if available (highly specific identifier)
                 if (releaseInfo.catno && !preciseQuery.includes(releaseInfo.catno)) {
                     preciseQuery += ` [${releaseInfo.catno}]`;
@@ -2667,12 +2753,31 @@ document.addEventListener('DOMContentLoaded', function() {
                     const playerSubtitle = document.getElementById('player-subtitle');
                     if (playerSubtitle) {
                         playerSubtitle.textContent = `Search: ${enhancedQuery}`;
-            } else {
+                    } else {
                         const subtitle = document.createElement('div');
                         subtitle.id = 'player-subtitle';
                         subtitle.style.cssText = 'font-size: 12px; opacity: 0.8; margin-top: 5px;';
                         subtitle.textContent = `Search: ${enhancedQuery}`;
                         playerTitle.parentNode.appendChild(subtitle);
+                    }
+                    
+                    // Add metadata display
+                    if (releaseInfo && (releaseInfo.catno || releaseInfo.label || releaseInfo.year)) {
+                        let metadataDiv = document.getElementById('player-metadata');
+                        if (!metadataDiv) {
+                            metadataDiv = document.createElement('div');
+                            metadataDiv.id = 'player-metadata';
+                            metadataDiv.style.cssText = 'font-size: 11px; color: #ccc; margin-top: 5px;';
+                            playerTitle.parentNode.appendChild(metadataDiv);
+                        }
+                        
+                        // Build metadata string
+                        const metaParts = [];
+                        if (releaseInfo.catno) metaParts.push(`Catalog: ${releaseInfo.catno}`);
+                        if (releaseInfo.label) metaParts.push(`Label: ${releaseInfo.label}`);
+                        if (releaseInfo.year) metaParts.push(`Year: ${releaseInfo.year}`);
+                        
+                        metadataDiv.textContent = metaParts.join(' | ');
                     }
                 }
                 
@@ -2704,6 +2809,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div id="player-header" style="background-color: #000; color: #fff; padding: 10px; font-family: 'Courier Prime', monospace; font-weight: bold;">
                         <div id="player-title" style="margin-bottom: 5px;">${displayTitle}</div>
                         <div id="player-subtitle" style="font-size: 12px; opacity: 0.8;">Search: ${enhancedQuery}</div>
+                        ${releaseInfo ? `
+                        <div id="player-metadata" style="font-size: 11px; color: #ccc; margin-top: 5px;">
+                            ${releaseInfo.catno ? `Catalog: ${releaseInfo.catno} | ` : ''}
+                            ${releaseInfo.label ? `Label: ${releaseInfo.label} | ` : ''}
+                            ${releaseInfo.year ? `Year: ${releaseInfo.year}` : ''}
+                        </div>
+                        ` : ''}
                     </div>
                     <div id="youtube-player">
                         <div class="loading-indicator" style="padding: 20px; text-align: center; background: #f5f5f5;">
@@ -2716,7 +2828,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <i class="youtube-icon">▶</i> Search Other Versions
                         </a>
                         <button id="retry-search" style="margin-right: 10px; background-color: #000000; color: #ffffff; border: 3px solid #000; padding: 8px 16px; cursor: pointer; font-family: 'Courier Prime', monospace; font-size: 0.9rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; transition: all 0.2s;">
-                            Retry With Track Name
+                            Try Different Search
                         </button>
                         <button id="close-player">Close Player</button>
                     </div>
@@ -2848,12 +2960,98 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     playerContainer.remove();
                     
-                    // Try again with just the title if we have artist/title format
-                    if (specificTrack && title) {
-                        playDiscogsTrack(title, releaseInfo);
+                    // Try different search strategies based on what we have
+                    if (specificTrack && artist && title) {
+                        // Create a dropdown menu with alternative search options
+                        const searchOptionsModal = document.createElement('div');
+                        searchOptionsModal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; padding: 15px; background-color: #000; color: #fff; text-align: center; z-index: 9999; font-family: "Courier Prime", monospace;';
+                        
+                        // Build alternative search options
+                        const alternativeSearches = [
+                            { name: "Just Title", query: title },
+                            { name: "Title + Label", query: `${title} ${releaseInfo && releaseInfo.label ? releaseInfo.label : ''}` },
+                            { name: "Title + Catalog Number", query: `${title} ${releaseInfo && releaseInfo.catno ? releaseInfo.catno : ''}` },
+                            { name: "Alternate Artist Format", query: `${title} by ${artist}` },
+                            { name: "Quoted Title", query: `"${title}"` }
+                        ];
+                        
+                        // For remixes, add special handling
+                        if (title.toLowerCase().includes('remix')) {
+                            const remixMatch = title.match(/\(([^)]+)\s+remix\)/i);
+                            if (remixMatch) {
+                                const remixer = remixMatch[1];
+                                const baseTitle = title.replace(/\([^)]+\s+remix\)/i, '').trim();
+                                alternativeSearches.push({ name: "Remix Format", query: `${baseTitle} ${remixer} remix` });
+                            }
+                        }
+                        
+                        // Build the modal content
+                        searchOptionsModal.innerHTML = `
+                            <div>
+                                <p><strong>Try Different Search Methods for:</strong> ${query}</p>
+                                <div style="margin: 15px 0;">
+                                    ${alternativeSearches.map((option, index) => `
+                                        <button data-query="${encodeURIComponent(option.query)}" class="alt-search-btn" style="display: inline-block; background: #000; color: #fff; border: 2px solid #fff; padding: 8px 15px; margin: 5px; cursor: pointer; font-family: 'Courier Prime', monospace;">
+                                            ${option.name}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                                <div style="margin-top: 10px;">
+                                    <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(query)}" target="_blank" 
+                                        style="display: inline-block; background: #fff; color: #000; padding: 5px 15px; text-decoration: none; margin-right: 10px;">
+                                        Open YouTube Search
+                                    </a>
+                                    <button id="close-search-options" style="background-color: #000000; color: #ffffff; border: 3px solid #fff; padding: 8px 16px; font-family: 'Courier Prime', monospace; font-size: 0.9rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; cursor: pointer;">
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(searchOptionsModal);
+                        
+                        // Add event listeners for alternate search buttons
+                        searchOptionsModal.querySelectorAll('.alt-search-btn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const altQuery = decodeURIComponent(this.getAttribute('data-query'));
+                                searchOptionsModal.remove();
+                                
+                                // Add extra context based on music type
+                                let finalQuery = altQuery;
+                                const isElectronic = /techno|house|electronic|ambient|dub/i.test(query) || 
+                                                   (releaseInfo && releaseInfo.label && /techno|house|electronic/i.test(releaseInfo.label));
+                                
+                                if (isElectronic && !finalQuery.toLowerCase().includes('vinyl')) {
+                                    finalQuery += ' vinyl';
+                                }
+                                
+                                // Add catalog if useful
+                                if (releaseInfo && releaseInfo.catno && !finalQuery.includes(releaseInfo.catno)) {
+                                    finalQuery += ` ${releaseInfo.catno}`;
+                                }
+                                
+                                // Try again with the new query
+                                playDiscogsTrack(finalQuery, releaseInfo);
+                            });
+                        });
+                        
+                        // Add close button handler
+                        document.getElementById('close-search-options').addEventListener('click', function() {
+                            searchOptionsModal.remove();
+                        });
+                        
+                        // Auto-remove after 30 seconds
+                        setTimeout(() => {
+                            if (document.body.contains(searchOptionsModal)) {
+                                searchOptionsModal.remove();
+                            }
+                        }, 30000);
                     } else {
-                        // No specific track info, try a more generic search
-                        playDiscogsTrack(query + " music", releaseInfo);
+                        // Try the simplest approach - title only or with a music indicator
+                        let altQuery = title || query;
+                        if (!/music|track|vinyl/i.test(altQuery)) {
+                            altQuery += ' music';
+                        }
+                        playDiscogsTrack(altQuery, releaseInfo);
                     }
                 });
             }

@@ -756,6 +756,9 @@ def search_video():
             if catalog_num:
                 # 1. Most precise search includes catalog number which is highly specific
                 search_queries.append(f'"{artist}" "{title}" {catalog_num}')
+                # 1a. Add variant with label to further improve specificity
+                if label_info:
+                    search_queries.append(f'"{artist}" "{title}" {catalog_num} {label_info}')
             
             # 2. Add quoted artist and title for exact match
             search_queries.append(f'"{artist}" "{title}"')
@@ -768,7 +771,10 @@ def search_video():
             if release_year:
                 search_queries.append(f'"{artist}" "{title}" {release_year}')
                 
-            # 5. Full context search
+            # 5. Add title with music/track keyword to improve relevance
+            search_queries.append(f'"{artist}" "{title}" music track')
+                
+            # 6. Full context search
             full_context = f'{artist} {title}'
             if catalog_num:
                 full_context += f' {catalog_num}'
@@ -777,6 +783,27 @@ def search_video():
             if release_year:
                 full_context += f' {release_year}'
             search_queries.append(full_context)
+            
+            # 7. For electronic music specifically
+            if is_electronic:
+                # Add electronic music specific context
+                search_queries.append(f'"{artist}" "{title}" electronic vinyl')
+                if label_info:
+                    search_queries.append(f'"{artist}" "{title}" {label_info} electronic')
+                
+            # 8. Add individual term searches for better matching
+            title_only_query = f'"{title}"'
+            if title_only_query not in search_queries and len(title) > 3:
+                search_queries.append(title_only_query + f' by "{artist}"')
+                
+            # 9. For remixes, add special handling
+            if 'remix' in title.lower():
+                remix_parts = re.match(r'(.+?)(?:\s*\(([^)]+)\s*remix\))', title, re.IGNORECASE)
+                if remix_parts:
+                    base_track = remix_parts.group(1).strip()
+                    remixer = remix_parts.group(2).strip()
+                    # Try searching with the remix info in different formats
+                    search_queries.append(f'"{base_track}" "{remixer}" remix')
         else:
             # Regular DJ set searches
             # 1. Most specific search with artist, title and extra context
@@ -884,14 +911,32 @@ def search_video():
                     # For Discogs sources, give more weight to catalog number and label matches
                     if source == "discogs":
                         if catalog_num and catalog_num.lower() in surrounding_text:
-                            score += 10  # Extra boost for catalog match in discogs searches
+                            score += 15  # Extra boost for catalog match in discogs searches
                         
                         # Check for release year
                         if release_year and release_year in surrounding_text:
                             score += 10
+                            
+                        # Additional content indicators for Discogs searches
+                        good_indicators = ['official', 'full track', 'release', 'records', 'vinyl', 'album']
+                        bad_indicators = ['mix compilation', 'megamix', 'mixtape', 'playlist', 'dj mix', 'full album', 'preview']
+                        
+                        # Bonus for good indicators
+                        for indicator in good_indicators:
+                            if indicator in surrounding_text:
+                                score += 5
+                                
+                        # Penalty for bad indicators
+                        for indicator in bad_indicators:
+                            if indicator in surrounding_text:
+                                score -= 15
                     
                     # Higher score for results that are closer to the top
                     score += max(0, 10 - vid_index)
+                    
+                    # Penalize videos with common issues
+                    if "playlist" in surrounding_text or "mix compilation" in surrounding_text:
+                        score -= 10
                     
                     # Update if this is the best match so far
                     if score > match_score:
@@ -901,7 +946,7 @@ def search_video():
             
             # Only use the best match if it has a minimum score
             # For Discogs, require a higher score threshold since we need more precision
-            min_score = 35 if source == "discogs" else 30
+            min_score = 40 if source == "discogs" else 30
             
             if best_match_id and match_score >= min_score:
                 video_id = best_match_id

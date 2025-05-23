@@ -362,7 +362,7 @@ document.addEventListener("DOMContentLoaded", function () {
         window.open(
           `https://www.youtube.com/results?search_query=${encodeURIComponent(
             artistName
-          )}`,
+          )}&autoplay=1`,
           "_blank"
         );
       });
@@ -436,7 +436,7 @@ document.addEventListener("DOMContentLoaded", function () {
         window.open(
           `https://www.youtube.com/results?search_query=${encodeURIComponent(
             labelName
-          )}`,
+          )}&autoplay=1`,
           "_blank"
         );
       });
@@ -581,7 +581,7 @@ document.addEventListener("DOMContentLoaded", function () {
         window.open(
           `https://www.youtube.com/results?search_query=${encodeURIComponent(
             searchTerm
-          )}`,
+          )}&autoplay=1`,
           "_blank"
         );
       });
