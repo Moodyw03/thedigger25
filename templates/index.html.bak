@@ -1,0 +1,3119 @@
+{% extends 'base.html' %}
+
+{% block title %}The Digger - Find DJ Tracklists{% endblock %}
+
+{% block content %}
+<style>
+    /* Track styling */
+    .track-item {
+        padding: 10px;
+        border-bottom: 1px solid #000;
+        display: flex;
+        flex-direction: column; /* Changed to column to place player below track info */
+    }
+    
+    .track-item.now-playing .track-item-content {
+        background-color: #000;
+        margin: -10px;
+        margin-bottom: 0;
+        padding: 10px;
+    }
+    
+    .track-item.now-playing .track-name,
+    .track-item.now-playing .track-number {
+        color: #fff;
+    }
+    
+    .track-item-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+    
+    .track-info {
+        flex-grow: 1;
+        font-family: 'Courier Prime', monospace;
+    }
+    
+    .track-name {
+        font-weight: normal;
+    }
+    
+    .track-actions {
+        margin-left: 10px;
+    }
+    
+    /* Player styling */
+    .inline-player-container {
+        margin-top: 10px;
+        margin-left: 0; /* Remove indent for brutalist style */
+        margin-right: 0;
+        display: none;
+        padding: 10px;
+        background-color: #fff;
+        border: 2px solid #000;
+        border-top: none;
+        width: calc(100% - 0px); /* Full width for brutalist style */
+    }
+    
+    .youtube-player-wrapper {
+        height: 1px; /* Hide visually but keep audio */
+        overflow: hidden;
+        margin-bottom: 5px;
+    }
+    
+    .audio-controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 0.9em;
+        height: 26px; /* Fixed height to prevent layout shifts */
+        padding: 3px 0;
+    }
+    
+    .time-display {
+        font-family: 'Courier Prime', monospace;
+        min-width: 90px;
+        display: inline-block;
+        font-size: 12px;
+        color: #000;
+        font-weight: bold;
+        margin-right: 10px;
+    }
+    
+    /* Play button styling */
+    .play-button {
+        background-color: #000;
+        color: #fff;
+        border: none;
+        border-radius: 0;
+        padding: 5px 10px;
+        cursor: pointer;
+        font-size: 12px;
+        font-family: 'Courier Prime', monospace;
+        text-transform: uppercase;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+    }
+    
+    .play-button:hover {
+        background-color: #333;
+    }
+    
+    .now-playing .play-button {
+        background-color: #fff;
+        color: #000;
+    }
+    
+    .now-playing .play-button:hover {
+        background-color: #ddd;
+    }
+    
+    .play-icon {
+        margin-right: 4px;
+        font-weight: bold;
+    }
+    
+    /* YouTube link styling */
+    .youtube-link {
+        color: #fff;
+        text-decoration: none;
+        font-size: 11px;
+        display: inline-flex;
+        align-items: center;
+        border: none;
+        padding: 4px 8px;
+        background-color: #000;
+        font-family: 'Courier Prime', monospace;
+        text-transform: uppercase;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+    }
+    
+    .youtube-link:hover {
+        background-color: #333;
+        text-decoration: none;
+    }
+    
+    .youtube-icon {
+        margin-right: 4px;
+        color: #fff;
+    }
+    
+    /* Playing state */
+    .playing-indicator {
+        display: inline-block;
+        padding: 2px 6px;
+        background-color: #000;
+        color: white;
+        border-radius: 0;
+        font-size: 11px;
+        margin-right: 8px;
+        font-family: 'Courier Prime', monospace;
+        text-transform: uppercase;
+    }
+    
+    /* Track list */
+    .track-list {
+        list-style-type: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    /* Player error styling */
+    .player-error {
+        display: none;
+        background-color: #000;
+        color: #fff;
+        padding: 8px;
+        margin-top: 5px;
+        font-family: 'Courier Prime', monospace;
+        text-transform: uppercase;
+        font-size: 11px;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+    }
+    
+    .player-error-icon {
+        margin-right: 5px;
+    }
+    
+    /* YouTube iframe error handling */
+    .player-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+    }
+    
+    .retry-button {
+        background-color: #000;
+        color: #fff;
+        border: none;
+        padding: 4px 8px;
+        margin-left: 10px;
+        font-family: 'Courier Prime', monospace;
+        font-size: 11px;
+        font-weight: bold;
+        text-transform: uppercase;
+        cursor: pointer;
+    }
+    
+    .retry-button:hover {
+        background-color: #333;
+    }
+    
+    /* Search type toggle styling */
+    .search-type-toggle {
+        display: flex;
+        margin-bottom: 15px;
+        overflow: hidden;
+        border: 2px solid #000;
+    }
+    
+    .toggle-button {
+        background-color: #fff;
+        color: #000;
+        border: none;
+        padding: 8px 16px;
+        flex: 1;
+        cursor: pointer;
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+        font-weight: bold;
+        text-transform: uppercase;
+        transition: background-color 0.2s;
+    }
+    
+    .toggle-button.active {
+        background-color: #000;
+        color: #fff;
+    }
+    
+    .toggle-button:first-child {
+        border-right: 1px solid #000;
+    }
+    
+    .toggle-button:hover:not(.active) {
+        background-color: #f0f0f0;
+    }
+    
+    /* Label search results styling */
+    .labels-container {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+    }
+    
+    .label-item {
+        border: 2px solid #000;
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .label-header {
+        display: flex;
+        margin-bottom: 15px;
+    }
+    
+    .label-thumb {
+        width: 80px;
+        height: 80px;
+        object-fit: cover;
+        border: 1px solid #000;
+        margin-right: 15px;
+    }
+    
+    .label-info {
+        flex: 1;
+    }
+    
+    .label-title {
+        margin: 0 0 5px 0;
+        font-family: 'Courier Prime', monospace;
+        font-size: 16px;
+    }
+    
+    .label-country {
+        margin: 0;
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+        color: #555;
+    }
+    
+    .view-discography-btn {
+        background-color: #000000;
+        color: #ffffff;
+        border: 3px solid #000;
+        padding: 12px 20px;
+        font-family: 'Courier Prime', monospace;
+        font-size: 1rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        cursor: pointer;
+        align-self: flex-start;
+        transition: all 0.2s;
+    }
+    
+    .view-discography-btn:hover {
+        background-color: #ffffff;
+        color: #000000;
+    }
+    
+    /* Discography styling */
+    .discography-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #000;
+        padding-bottom: 10px;
+    }
+    
+    .back-button {
+        background-color: #000000;
+        color: #ffffff;
+        border: 3px solid #000;
+        padding: 12px 20px;
+        font-family: 'Courier Prime', monospace;
+        font-size: 1rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .back-button:hover {
+        background-color: #ffffff;
+        color: #000000;
+    }
+    
+    .releases-container {
+        margin-top: 20px;
+    }
+    
+    .release-item {
+        border-bottom: 1px solid #000;
+        padding: 15px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .release-info {
+        flex: 1;
+    }
+    
+    .release-title {
+        margin: 0 0 5px 0;
+        font-family: 'Courier Prime', monospace;
+        font-size: 16px;
+    }
+    
+    .release-details {
+        margin: 0;
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+        color: #555;
+    }
+    
+    .release-year {
+        margin-right: 10px;
+    }
+    
+    .play-track-btn {
+        background-color: #000;
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+    
+    .play-track-btn:hover {
+        background-color: #333;
+    }
+    
+    /* YouTube player container */
+    #youtube-player-container {
+        margin-bottom: 20px;
+        border: 2px solid #000;
+        overflow: hidden;
+    }
+    
+    .player-controls {
+        background-color: #000;
+        padding: 10px;
+        display: flex;
+        justify-content: flex-end;
+    }
+    
+    #close-player {
+        background-color: #000000;
+        color: #ffffff;
+        border: 3px solid #000;
+        padding: 8px 16px;
+        font-family: 'Courier Prime', monospace;
+        font-size: 0.9rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    #close-player:hover {
+        background-color: #ffffff;
+        color: #000000;
+    }
+    
+    /* Mix container styling */
+    .mixes-container {
+        margin-top: 20px;
+    }
+    
+    .mix-item {
+        border: 2px solid #000;
+        margin-bottom: 15px;
+        padding: 15px;
+    }
+    
+    .mix-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    
+    .mix-title {
+        margin: 0;
+        font-family: 'Courier Prime', monospace;
+        font-size: 18px;
+    }
+    
+    .mix-date {
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+        color: #666;
+    }
+    
+    .mix-details {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .track-count {
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+    }
+    
+    .toggle-tracklist-btn {
+        background-color: #000;
+        color: #fff;
+        border: none;
+        padding: 6px 12px;
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+        cursor: pointer;
+    }
+    
+    .toggle-tracklist-btn:hover {
+        background-color: #333;
+    }
+    
+    .tracklist-container {
+        margin-top: 15px;
+        border-top: 1px dashed #000;
+        padding-top: 15px;
+    }
+    
+    /* Modal styles */
+    .modal {
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        overflow-y: auto;
+    }
+    
+    .modal-content {
+        background-color: #fff;
+        margin: 5% auto;
+        padding: 20px;
+        border: 2px solid #000;
+        width: 80%;
+        max-width: 900px;
+        position: relative;
+    }
+    
+    .close-modal {
+        position: absolute;
+        top: 10px;
+        right: 20px;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+    
+    .close-modal:hover {
+        color: #555;
+    }
+    
+    /* Release styles */
+    .year-group {
+        margin-bottom: 30px;
+    }
+    
+    .year-header {
+        font-family: 'Courier Prime', monospace;
+        font-size: 20px;
+        margin-bottom: 10px;
+        padding-bottom: 5px;
+        border-bottom: 2px solid #000;
+    }
+    
+    .release-item {
+        display: flex;
+        padding: 15px 0;
+        border-bottom: 1px solid #ddd;
+        align-items: center;
+    }
+    
+    .release-image {
+        flex: 0 0 70px;
+        margin-right: 15px;
+    }
+    
+    .release-thumb {
+        width: 70px;
+        height: 70px;
+        object-fit: cover;
+        border: 1px solid #ddd;
+    }
+    
+    .release-info {
+        flex: 1;
+    }
+    
+    .release-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .play-track-btn, .view-details-btn {
+        background-color: #000000;
+        color: #ffffff;
+        border: 3px solid #000;
+        padding: 8px 16px;
+        font-family: 'Courier Prime', monospace;
+        font-size: 0.9rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.2s;
+    }
+    
+    .play-track-btn:hover, .view-details-btn:hover {
+        background-color: #ffffff;
+        color: #000000;
+    }
+    
+    /* Release details modal */
+    .release-header {
+        display: flex;
+        margin-bottom: 30px;
+    }
+    
+    .release-cover {
+        flex: 0 0 300px;
+        margin-right: 20px;
+    }
+    
+    .cover-image {
+        width: 100%;
+        height: auto;
+        border: 1px solid #ddd;
+    }
+    
+    .release-main-info {
+        flex: 1;
+    }
+    
+    .release-main-info h2 {
+        margin-top: 0;
+        font-family: 'Courier Prime', monospace;
+        font-size: 24px;
+    }
+    
+    .release-meta {
+        font-family: 'Courier Prime', monospace;
+        font-size: 16px;
+        color: #666;
+        margin-bottom: 10px;
+    }
+    
+    .release-meta span {
+        margin-right: 15px;
+    }
+    
+    .release-format {
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+        margin-bottom: 20px;
+    }
+    
+    .play-album-btn {
+        background-color: #000000;
+        color: #ffffff;
+        border: 3px solid #000;
+        padding: 12px 20px;
+        font-family: 'Courier Prime', monospace;
+        font-size: 1rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .play-album-btn:hover {
+        background-color: #ffffff;
+        color: #000000;
+    }
+    
+    .release-tracklist {
+        margin-bottom: 30px;
+    }
+    
+    .release-tracklist h3 {
+        font-family: 'Courier Prime', monospace;
+        font-size: 20px;
+        margin-bottom: 10px;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #000;
+    }
+    
+    ul.tracks {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .release-track {
+        display: grid;
+        grid-template-columns: 50px 1fr 80px 80px;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #eee;
+        font-family: 'Courier Prime', monospace;
+    }
+    
+    .track-position {
+        font-weight: bold;
+    }
+    
+    .loading {
+        padding: 20px;
+        text-align: center;
+        font-family: 'Courier Prime', monospace;
+    }
+    
+    .error {
+        padding: 20px;
+        color: red;
+        text-align: center;
+        font-family: 'Courier Prime', monospace;
+    }
+    
+    .release-notes {
+        font-family: 'Courier Prime', monospace;
+        line-height: 1.5;
+    }
+    
+    .release-notes h3 {
+        font-size: 20px;
+        margin-bottom: 10px;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #000;
+    }
+    
+    .results-header {
+        margin-bottom: 20px;
+    }
+    
+    .results-header h2 {
+        margin-bottom: 5px;
+    }
+    
+    .total-mixes {
+        font-family: 'Courier Prime', monospace;
+        font-size: 14px;
+        color: #666;
+        margin-top: 0;
+    }
+    
+    .discography-stats {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .discography-stats span {
+        font-family: 'Courier Prime', monospace;
+        font-size: 16px;
+        font-weight: bold;
+    }
+    
+    /* Hover style for retry button */
+    #retry-search:hover {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+    
+    /* Hover style for close error button */
+    #close-error:hover {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+    
+    /* Special styling for release track play buttons */
+    .release-track .play-track-btn {
+        background-color: #000000;
+        color: #ffffff;
+        border: 2px solid #000;
+        padding: 4px 8px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        width: 100%;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .release-track .play-track-btn:hover {
+        background-color: #ffffff;
+        color: #000000;
+    }
+</style>
+
+<div class="search-section">
+    <div class="search-type-toggle">
+        <button id="toggle-dj" class="toggle-button active">DJ Sets</button>
+        <button id="toggle-label" class="toggle-button">Label Discography (Discogs)</button>
+    </div>
+    
+    <form id="search-form" class="search-form">
+        <input type="text" id="artist-name-input" name="artist_name" value="{{ artist_name if artist_name else '' }}" placeholder="Enter artist name (e.g., Ben UFO)" required>
+        <button type="submit" id="search-button">Find Tracklists</button>
+        <input type="hidden" id="search-type" name="search_type" value="dj">
+    </form>
+    
+    <div id="progress-indicator" class="progress-bar-container" style="display: none;">
+        <div class="progress-bar">
+            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+        </div>
+        <p class="progress-status" id="progress-status">Starting search...</p>
+    </div>
+
+    <div id="error-container" class="error" style="display: none;"></div>
+
+    <div id="results-container">
+        <!-- Results will be dynamically injected here -->
+        <!-- Keep existing structure for PDF download etc if needed outside results -->
+    </div>
+    
+    <div class="search-options">
+        <span class="search-options-text">Or get a PDF directly:</span>
+        <form action="{{ url_for('background_pdf') }}" method="get" class="direct-pdf-form">
+            <input type="text" name="artist_name" placeholder="Enter artist name" required>
+            <button type="submit" class="pdf-button">
+                <svg class="pdf-icon" viewBox="0 0 24 24" width="18" height="18">
+                    <path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z" fill="currentColor"/>
+                </svg>
+                Download PDF
+            </button>
+        </form>
+        <p class="direct-pdf-hint">Works with both small and large catalogs using background processing</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Create script tag for YouTube iframe API programmatically
+const tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+const firstScriptTag = document.getElementsByTagName('script')[0];
+firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+// Global variables for playback tracking
+let currentPlayingTrack = null;
+let playerTimers = {};
+
+// Main app logic
+document.addEventListener('DOMContentLoaded', function() {
+    const searchForm = document.getElementById('search-form');
+    const searchInput = document.getElementById('artist-name-input');
+    const searchButton = document.getElementById('search-button');
+    const progressIndicator = document.getElementById('progress-indicator');
+    const progressBarFill = document.getElementById('progress-bar-fill');
+    const progressStatus = document.getElementById('progress-status');
+    const errorContainer = document.getElementById('error-container');
+    const resultsContainer = document.getElementById('results-container');
+    const searchTypeInput = document.getElementById('search-type');
+    
+    // Make sure YouTube iframe API is loaded
+    if (!window.YT) {
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+    }
+    
+    // Search type toggle elements
+    const toggleDJ = document.getElementById('toggle-dj');
+    const toggleLabel = document.getElementById('toggle-label');
+    
+    // Set up toggle buttons
+    toggleDJ.addEventListener('click', function() {
+        toggleDJ.classList.add('active');
+        toggleLabel.classList.remove('active');
+        searchTypeInput.value = 'dj';
+        searchInput.placeholder = 'Enter artist name (e.g., Ben UFO)';
+        searchButton.textContent = 'Find Tracklists';
+    });
+    
+    toggleLabel.addEventListener('click', function() {
+        toggleLabel.classList.add('active');
+        toggleDJ.classList.remove('active');
+        searchTypeInput.value = 'label';
+        searchInput.placeholder = 'Enter label name (e.g., Hessle Audio)';
+        searchButton.textContent = 'Find Discography';
+    });
+    
+    let pollingInterval = null;
+    let currentJobId = null;
+
+    // Focus the input field when the page loads
+    searchInput.focus();
+    
+    // Auto-select all text when input field is clicked
+    searchInput.addEventListener('click', function() {
+        this.select();
+    });
+
+    // Function to show error messages
+    function showError(message) {
+        if (errorContainer) {
+            errorContainer.textContent = message;
+            errorContainer.style.display = 'block';
+        }
+    }
+
+    // Function to hide error messages
+    function hideError() {
+        if (errorContainer) {
+            errorContainer.style.display = 'none';
+        }
+    }
+
+    // Function to clear results
+    function clearResults() {
+        if (resultsContainer) {
+            resultsContainer.innerHTML = '';
+        }
+    }
+
+    // Function to reset UI after error
+    function resetUiOnError() {
+        if (searchButton) {
+            searchButton.disabled = false;
+            
+            // Check which search type is active and set appropriate button text
+            const searchType = searchTypeInput.value;
+            if (searchType === 'dj') {
+                searchButton.textContent = 'Find Tracklists';
+            } else {
+                searchButton.textContent = 'Find Discography';
+            }
+        }
+        
+        if (progressIndicator) {
+            progressIndicator.style.display = 'none';
+        }
+    }
+
+    // Handle Search Form Submission
+    searchForm.addEventListener('submit', async function(e) {
+        e.preventDefault(); // Prevent default GET submission
+        
+        const searchQuery = searchInput.value.trim();
+        const searchType = searchTypeInput.value;
+        
+        if (!searchQuery) {
+            showError("Please enter a search term.");
+            return;
+        }
+
+        // Reset UI
+        hideError();
+        clearResults();
+        if (pollingInterval) clearInterval(pollingInterval); // Clear previous polling
+        progressStatus.textContent = 'Sending request...';
+        progressBarFill.style.width = '5%'; 
+        progressIndicator.style.display = 'block';
+        searchButton.disabled = true;
+        searchButton.textContent = 'Searching...';
+
+        try {
+            if (searchType === 'dj') {
+                // Handle DJ sets search (existing functionality)
+                await searchDJSets(searchQuery);
+            } else {
+                // Handle label discography search (new functionality)
+                await searchLabelDiscography(searchQuery);
+            }
+        } catch (error) {
+            console.error("Error submitting search:", error);
+            showError(error.message || "Failed to start search job.");
+            resetUiOnError();
+        }
+    });
+    
+    // DJ Sets search (existing functionality with minor modifications)
+    async function searchDJSets(artistName) {
+            const formData = new FormData();
+            formData.append('artist_name', artistName);
+
+            const response = await fetch("{{ url_for('start_search_job') }}", {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                let errorMsg = `Error starting search: ${response.statusText}`;
+                try {
+                    const errData = await response.json();
+                    errorMsg = errData.error || errorMsg;
+                } catch (jsonErr) { /* Ignore if response is not JSON */ }
+                throw new Error(errorMsg);
+            }
+
+            const data = await response.json();
+            
+        // Handle cached response directly
+            if (data.status === 'cached') {
+                console.log("Cache hit! Rendering cached results directly");
+                progressStatus.textContent = 'Retrieved from cache';
+                progressBarFill.style.width = '100%';
+                // Briefly show the success message before hiding the progress bar
+                setTimeout(() => {
+                    progressIndicator.style.display = 'none';
+                }, 1500);
+                renderResults(data.data); // Render the cached data directly
+                searchButton.disabled = false;
+            searchButton.textContent = 'Find Tracklists';
+                return;
+            }
+            
+        // Handle queued job
+            currentJobId = data.job_id;
+            progressStatus.textContent = 'Search job started. Waiting for progress...';
+            progressBarFill.style.width = '10%';
+            pollJobStatus(currentJobId); // Start polling
+        }
+
+    // Function to poll job status for DJ sets search
+    function pollJobStatus(jobId) {
+        if (pollingInterval) clearInterval(pollingInterval);
+
+        pollingInterval = setInterval(() => {
+            fetch(`/job/${jobId}/status`)
+                .then((response) => response.json())
+                .then((statusData) => {
+                    if (statusData.status === 'finished') {
+                clearInterval(pollingInterval);
+                        progressBarFill.style.width = '90%';
+                        progressStatus.textContent = 'Fetching results...';
+
+                        // Get the job result
+                        return fetch(`/job/${jobId}/result`);
+                    } else if (statusData.status === 'failed') {
+                        clearInterval(pollingInterval);
+                        throw new Error(
+                            `Job failed: ${
+                                (statusData.meta && statusData.meta.error) || 'Unknown error'
+                            }`
+                        );
+                    } else {
+                        // Update progress
+                        const progress = (statusData.meta && statusData.meta.progress) || 0;
+                        progressBarFill.style.width = `${Math.max(
+                            10,
+                            Math.min(80, progress)
+                        )}%`;
+                        progressStatus.textContent =
+                            (statusData.meta && statusData.meta.status) || 'Processing...';
+                    }
+                })
+                .then((response) => {
+                    if (response) return response.json();
+                })
+                .then((resultData) => {
+                    if (resultData) {
+                        progressBarFill.style.width = '100%';
+                        progressStatus.textContent = 'Search complete!';
+
+                        setTimeout(() => {
+                            progressIndicator.style.display = 'none';
+                        }, 1000);
+
+                        renderResults(resultData.data);
+                        searchButton.disabled = false;
+                        searchButton.textContent = 'Find Tracklists';
+                    }
+                })
+                .catch((error) => {
+                        clearInterval(pollingInterval);
+                    console.error('Polling error:', error);
+                    errorContainer.textContent = `Error: ${error.message}`;
+                    errorContainer.style.display = 'block';
+                    progressIndicator.style.display = 'none';
+                    searchButton.disabled = false;
+                    searchButton.textContent = 'Find Tracklists';
+                });
+        }, 2000); // Poll every 2 seconds
+    }
+
+    // Function to render DJ set results
+    function renderResults(data) {
+        if (!resultsContainer) return;
+
+        // Check if we have the right data structure
+        const mixes = data.mixes || data;
+        const artistName = data.artist || '';
+
+        // DEBUG: Log the first mix with tracks to console to check format
+        const trackExample = mixes.find(mix => mix.tracks && mix.tracks.length > 0);
+        if (trackExample) {
+            console.log('Example of track data format:', trackExample.tracks[0]);
+        }
+
+        if (!mixes || mixes.length === 0) {
+            resultsContainer.innerHTML = `
+                <div class="no-results">No mixes found for this artist.</div>
+            `;
+            return;
+        }
+
+        // Sort mixes by date if available (newest first)
+        const sortedMixes = [...mixes].sort((a, b) => {
+            if (a.date && b.date) {
+                return new Date(b.date) - new Date(a.date);
+            }
+            return 0;
+        });
+
+        // Filter only mixes with tracklists
+        const mixesWithTracklists = sortedMixes.filter(mix => mix.has_tracklist);
+        
+        if (mixesWithTracklists.length === 0) {
+            resultsContainer.innerHTML = `
+                <div class="no-results">
+                    <h2>Found ${sortedMixes.length} mixes by ${artistName}, but none have tracklists.</h2>
+                    <p>Try searching for another DJ.</p>
+            </div>
+        `;
+            return;
+        }
+
+        // Build results HTML
+        let html = `
+            <div class="results-header">
+                <h2>Found ${mixesWithTracklists.length} mixes with tracklists by ${artistName}</h2>
+                <p class="total-mixes">(Total: ${sortedMixes.length} mixes)</p>
+                </div>
+            <div class="mixes-container">
+        `;
+
+        // Add only mixes with tracklists to the HTML
+        mixesWithTracklists.forEach((mix) => {
+            const date = mix.date ? `<span class="mix-date">${mix.date}</span>` : '';
+            const trackCount = mix.tracks ? mix.tracks.length : 0;
+            
+            html += `
+                <div class="mix-item" data-mix-id="${mix.id || ''}">
+                    <div class="mix-header">
+                        <h3 class="mix-title">${mix.title || 'Untitled Mix'}</h3>
+                        ${date}
+                                    </div>
+                    <div class="mix-details">
+                        <span class="track-count">${trackCount} tracks</span>
+                        <button class="toggle-tracklist-btn" data-mix-index="${sortedMixes.indexOf(mix)}">
+                            Show Tracklist
+            </button>
+                                    </div>
+                    <div class="tracklist-container" style="display: none;">
+                        <div class="tracklist-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 10px;">
+                            <button class="play-all-button" style="background-color: #000; color: #fff; border: none; padding: 8px 16px; font-family: 'Courier Prime', monospace; font-size: 14px; font-weight: bold; cursor: pointer;">
+                                ▶ Play All Tracks (2 min each)
+            </button>
+                            <div class="playlist-status" style="display: none; font-family: 'Courier Prime', monospace; font-size: 14px;">
+                                Playing track <span class="current-track-num">1</span> of <span class="total-tracks">0</span>
+        </div>
+    </div>
+                        <ul class="track-list"></ul>
+    </div>
+            </div>
+        `;
+        });
+
+        html += `</div>`;
+        resultsContainer.innerHTML = html;
+
+        // Add event listeners to tracklist toggle buttons
+        document.querySelectorAll('.toggle-tracklist-btn').forEach((button) => {
+            button.addEventListener('click', function() {
+                const mixIndex = parseInt(this.dataset.mixIndex);
+                const mix = sortedMixes[mixIndex];
+                const mixItem = this.closest('.mix-item');
+                const tracklistContainer = mixItem.querySelector('.tracklist-container');
+                const trackList = tracklistContainer.querySelector('.track-list');
+                
+                // Toggle visibility
+                if (tracklistContainer.style.display === 'none') {
+                    // Show tracklist
+                    if (trackList.children.length === 0) {
+                        // Only load tracks if not loaded yet
+                        let tracklistHtml = '';
+                        
+                        // Log complete track data for debugging
+                        console.log('Complete tracks data:', mix.tracks);
+                        
+                        mix.tracks.forEach((track, index) => {
+                            // Get track details - handle different possible data formats
+                            let trackInfo = '';
+                            
+                            // Process different track formats
+                            if (typeof track === 'string') {
+                                // If track is a simple string
+                                trackInfo = track;
+                            } 
+                            else if (track.id && track.track) {
+                                // MixesDB typical format: id and track fields
+                                trackInfo = track.track;
+                            }
+                            else if (track.id && typeof track.id === 'string') {
+                                // MixesDB often puts the track info in the ID field with no track field
+                                trackInfo = track.id;
+                            }
+                            else if (track.artist || track.title) {
+                                // Standard artist/title format
+                                trackInfo = track.artist ? `${track.artist} - ${track.title || 'Unknown Title'}` : track.title || 'Unknown Track';
+                            } 
+                            else if (track.text) {
+                                // Just a text field
+                                trackInfo = track.text;
+                            }
+                            else {
+                                // Last resort - try to extract meaningful data from the object
+                                const trackStr = JSON.stringify(track);
+                                trackInfo = trackStr.replace(/[{}"]/g, '').replace(/,/g, ' - ');
+                            }
+                            
+                            // Clean up the track info for display
+                            // Remove any "id:" prefixes
+                            trackInfo = trackInfo.replace(/^id:\s*/, '');
+                            
+                            tracklistHtml += `
+                                <li class="track-item">
+                                <div class="track-item-content">
+                                    <div class="track-info">
+                                        <span class="track-number">${index + 1}.</span>
+                                            <span class="track-name">${trackInfo}</span>
+                                    </div>
+                                    <div class="track-actions">
+                                            <button class="play-button" data-query="${encodeURIComponent(trackInfo)}">
+                                                <span class="play-icon">▶</span> Play
+                                        </button>
+                                    </div>
+                                </div>
+                                    <div class="inline-player-container"></div>
+                                </li>
+                            `;
+                        });
+                        
+                        trackList.innerHTML = tracklistHtml;
+                        
+                        // Add event listeners to play buttons
+                        trackList.querySelectorAll('.play-button').forEach((playButton) => {
+                            playButton.addEventListener('click', function() {
+                                const query = this.dataset.query;
+                    const trackItem = this.closest('.track-item');
+                                searchYouTube(query, trackItem);
+                            });
+                        });
+                    }
+                    
+                    tracklistContainer.style.display = 'block';
+                    this.textContent = 'Hide Tracklist';
+            } else {
+                    // Hide tracklist
+                    tracklistContainer.style.display = 'none';
+                    this.textContent = 'Show Tracklist';
+                }
+            });
+        });
+
+        // Add event listeners to play-all buttons for continuous playback
+        document.querySelectorAll('.play-all-button').forEach((button) => {
+            button.addEventListener('click', function() {
+                const mixItem = this.closest('.mix-item');
+                const trackItems = mixItem.querySelectorAll('.track-item');
+                const playlistStatus = mixItem.querySelector('.playlist-status');
+                const currentTrackNumEl = playlistStatus.querySelector('.current-track-num');
+                const totalTracksEl = playlistStatus.querySelector('.total-tracks');
+                
+                // Set total track count
+                totalTracksEl.textContent = trackItems.length;
+                
+                // Show playlist status
+                playlistStatus.style.display = 'block';
+                
+                // Initialize playlist state
+                const playlistState = {
+                    tracks: trackItems,
+                    currentIndex: 0,
+                    isPlaying: false,
+                    autoPlayTimerId: null
+                };
+                
+                // Store state in the mixItem element
+                mixItem.dataset.playlistState = JSON.stringify({
+                    currentIndex: 0,
+                    totalTracks: trackItems.length
+                });
+                
+                // Function to play a track from the playlist
+                function playTrackAtIndex(index) {
+                    // Reset all currently playing tracks
+                    document.querySelectorAll('.track-item.now-playing').forEach(item => {
+                        if (!playlistState.tracks.includes(item) || item !== playlistState.tracks[index]) {
+                            item.classList.remove('now-playing');
+                            const playerContainer = item.querySelector('.inline-player-container');
+                            if (playerContainer) {
+                                playerContainer.style.display = 'none';
+                                playerContainer.innerHTML = '';
+                            }
+                            
+                            // Reset play button text
+                            const playButton = item.querySelector('.play-button');
+                            if (playButton) {
+                                playButton.innerHTML = '<span class="play-icon">▶</span> Play';
+                            }
+                            
+                            // Clear any existing timers
+                            const trackId = item.dataset.trackId;
+                            if (trackId && playerTimers[trackId]) {
+                                clearInterval(playerTimers[trackId]);
+                                delete playerTimers[trackId];
+                            }
+                        }
+                    });
+                    
+                    // Clear any previous auto-play timer
+                    if (playlistState.autoPlayTimerId) {
+                        clearTimeout(playlistState.autoPlayTimerId);
+                    }
+                    
+                    // Update current track index
+                    playlistState.currentIndex = index;
+                    
+                    // Update display
+                    currentTrackNumEl.textContent = index + 1;
+                    
+                    // Store current state
+                    mixItem.dataset.playlistState = JSON.stringify({
+                        currentIndex: index,
+                        totalTracks: trackItems.length
+                    });
+                    
+                    // Get the track item
+                    const trackItem = playlistState.tracks[index];
+                    if (!trackItem) return;
+                    
+                    // Find the play button and click it
+                    const playButton = trackItem.querySelector('.play-button');
+                    if (playButton) {
+                        playButton.click();
+                        
+                        // Set a timer to auto-play the next track after 2 minutes
+                        playlistState.autoPlayTimerId = setTimeout(() => {
+                            // If we have more tracks, play the next one
+                            if (index < playlistState.tracks.length - 1) {
+                                playTrackAtIndex(index + 1);
+                    } else {
+                                // We've reached the end of the playlist
+                                console.log('Playlist finished');
+                                playlistStatus.innerHTML += ' <span style="color: #090;">(Finished)</span>';
+                            }
+                        }, 120000); // 2 minutes = 120,000 ms
+                    }
+                }
+                
+                // Start playing from the first track
+                playTrackAtIndex(0);
+            });
+        });
+    }
+    
+    // Label discography search (new functionality)
+    async function searchLabelDiscography(labelName) {
+        try {
+            progressStatus.textContent = 'Searching for labels...';
+            progressBarFill.style.width = '30%';
+            
+            // Search for labels matching the query
+            const response = await fetch(`/discogs/search_label?label_name=${encodeURIComponent(labelName)}`);
+            
+            if (!response.ok) {
+                throw new Error(`Label search failed: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            // Update progress
+            progressStatus.textContent = 'Processing results...';
+            progressBarFill.style.width = '100%';
+            
+            // Render search results
+            setTimeout(() => {
+                progressIndicator.style.display = 'none';
+                searchButton.disabled = false;
+                searchButton.textContent = 'Find Discography';
+                renderLabelSearchResults(data, labelName);
+            }, 1000);
+            
+        } catch (error) {
+            console.error("Discogs search error:", error);
+            throw error;
+        }
+    }
+
+    // Render label search results
+    function renderLabelSearchResults(data, searchQuery) {
+        if (!data.results || data.results.length === 0) {
+            resultsContainer.innerHTML = `
+                <div class="no-results">
+                    <h2>No labels found for "${searchQuery}"</h2>
+                    <p>Try a different search term or check the spelling.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Filter for just label type results
+        const labels = data.results.filter(item => item.type === 'label');
+        
+        if (labels.length === 0) {
+            resultsContainer.innerHTML = `
+                <div class="no-results">
+                    <h2>No labels found for "${searchQuery}"</h2>
+                    <p>Try a different search term or check the spelling.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = `
+            <h2>Label Search Results for "${searchQuery}"</h2>
+            <div class="labels-container">
+        `;
+        
+        labels.forEach(label => {
+            const thumbUrl = label.thumb || 'https://via.placeholder.com/150?text=No+Image';
+            const country = label.country || 'Unknown location';
+            
+            html += `
+                <div class="label-item" data-label-id="${label.id}">
+                    <div class="label-header">
+                        <img src="${thumbUrl}" alt="${label.title}" class="label-thumb">
+                        <div class="label-info">
+                            <h3 class="label-title">${label.title}</h3>
+                            <p class="label-country">${country}</p>
+                        </div>
+                    </div>
+                    <button class="view-discography-btn" data-label-id="${label.id}" data-label-name="${label.title}">
+                        View Discography
+                    </button>
+                </div>
+            `;
+        });
+        
+        html += `
+            </div>
+        `;
+        
+        resultsContainer.innerHTML = html;
+        
+        // Add event listeners to buttons
+        document.querySelectorAll('.view-discography-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const labelId = this.getAttribute('data-label-id');
+                const labelName = this.getAttribute('data-label-name');
+                fetchLabelDiscography(labelId, labelName);
+            });
+        });
+    }
+    
+    // Fetch label discography
+    async function fetchLabelDiscography(labelId, labelName) {
+        try {
+            // Show loading state
+            progressStatus.textContent = `Loading discography for ${labelName}...`;
+            progressBarFill.style.width = '50%';
+            progressIndicator.style.display = 'block';
+            
+            const response = await fetch(`/discogs/label/${labelId}/releases`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch discography: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            // Update progress
+            progressStatus.textContent = 'Processing discography...';
+            progressBarFill.style.width = '100%';
+            
+            // Render discography
+                            setTimeout(() => {
+                progressIndicator.style.display = 'none';
+                renderLabelDiscography(data, labelName);
+            }, 1000);
+            
+        } catch (error) {
+            console.error("Error fetching discography:", error);
+            showError(error.message || "Failed to fetch discography.");
+            progressIndicator.style.display = 'none';
+        }
+    }
+    
+    // Render label discography
+    function renderLabelDiscography(data, labelName) {
+        if (!data.releases || data.releases.length === 0) {
+            resultsContainer.innerHTML = `
+                <div class="no-results">
+                    <h2>No releases found for ${labelName}</h2>
+                    <p>This label may not have any releases in the Discogs database.</p>
+                    <button id="back-to-labels" class="back-button">Back to Search Results</button>
+                </div>
+            `;
+            document.getElementById('back-to-labels').addEventListener('click', function() {
+                history.back();
+            });
+            return;
+        }
+        
+        // Group releases by year
+        const releasesByYear = {};
+        data.releases.forEach(release => {
+            const year = release.year || 'Unknown Year';
+            if (!releasesByYear[year]) {
+                releasesByYear[year] = [];
+            }
+            releasesByYear[year].push(release);
+        });
+        
+        // Sort years in descending order
+        const sortedYears = Object.keys(releasesByYear).sort((a, b) => {
+            if (a === 'Unknown Year') return 1;
+            if (b === 'Unknown Year') return -1;
+            return parseInt(b) - parseInt(a);
+        });
+        
+        let html = `
+            <div class="discography-header">
+                <h2>${labelName} Discography</h2>
+                <div class="discography-stats">
+                    <span>${data.releases.length} Releases</span>
+                    <button id="back-to-labels" class="back-button">Back to Search Results</button>
+                </div>
+            </div>
+        `;
+        
+        sortedYears.forEach(year => {
+            html += `
+                <div class="year-group">
+                    <h3 class="year-header">${year}</h3>
+                    <div class="releases-container">
+            `;
+            
+            releasesByYear[year].forEach(release => {
+                const artistName = release.artist || 'Various Artists';
+                const title = release.title || 'Untitled';
+                const catno = release.catno || '';
+                const formatInfo = release.format || '';
+                const resourceUrl = release.resource_url || '';
+                
+                // Build a thumbnail URL if available
+                const thumbUrl = release.thumb || 'https://via.placeholder.com/70?text=No+Image';
+                
+                html += `
+                    <div class="release-item" data-release-id="${release.id}" data-resource-url="${resourceUrl}">
+                        <div class="release-image">
+                            <img src="${thumbUrl}" alt="${title}" class="release-thumb">
+                        </div>
+                        <div class="release-info">
+                            <h3 class="release-title">${artistName} - ${title}</h3>
+                            <p class="release-details">
+                                <span class="release-cat">${catno}</span>
+                                <span class="release-format">${formatInfo}</span>
+                            </p>
+                        </div>
+                        <div class="release-actions">
+                            <button class="youtube-btn" data-query="${encodeURIComponent(`${artistName} - ${title}`)}"
+                                data-year="${year}" data-catalog="${catno}" data-label="${labelName}">
+                                <i class="youtube-icon">▶</i> YouTube
+                            </button>
+                            <button class="view-details-btn" data-id="${release.id}">
+                                Details
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+        
+        // Add a release details modal
+        html += `
+            <div id="release-details-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <span class="close-modal">&times;</span>
+                    <div id="release-details-container">
+                        <div class="loading">Loading release details...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        resultsContainer.innerHTML = html;
+        
+        // Add event listeners
+        document.getElementById('back-to-labels').addEventListener('click', function() {
+            history.back();
+        });
+        
+        document.querySelectorAll('.play-track-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const query = this.getAttribute('data-query');
+                // Get additional context from the release element for better YouTube search
+                const releaseEl = this.closest('.release-item');
+                const releaseInfo = {
+                    label: releaseEl.querySelector('.release-cat') ? 
+                          releaseEl.querySelector('.release-cat').textContent : '',
+                    year: releaseEl.closest('.year-group') ?
+                          releaseEl.closest('.year-group').querySelector('.year-header').textContent : ''
+                };
+                playDiscogsTrack(query, releaseInfo);
+            });
+        });
+        
+        // Add event listeners for the YouTube buttons
+        document.querySelectorAll('.youtube-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const query = this.getAttribute('data-query');
+                const year = this.getAttribute('data-year');
+                const catalog = this.getAttribute('data-catalog');
+                const label = this.getAttribute('data-label');
+                
+                // Create an enhanced search query with all available metadata
+                let enhancedQuery = query;
+                
+                // Separate into artist and title if possible for more precise searching
+                let artist = '';
+                let title = '';
+                if (query.includes(' - ')) {
+                    [artist, title] = query.split(' - ').map(part => part.trim());
+                    
+                    // Use quotes for exact matching
+                    enhancedQuery = `"${artist}" "${title}"`;
+                } else {
+                    // If no clear artist-title format, use the original query with quotes
+                    enhancedQuery = `"${query}"`;
+                }
+                
+                // Build the final query with additional metadata
+                let searchQuery = enhancedQuery;
+                
+                // Add catalog number which is highly specific for electronic music
+                if (catalog && !searchQuery.includes(catalog)) {
+                    searchQuery += ` ${catalog}`;
+                }
+                
+                // Add label information which helps identify exact releases
+                if (label && !searchQuery.toLowerCase().includes(label.toLowerCase())) {
+                    searchQuery += ` "${label}"`;
+                }
+                
+                // Add year for better temporal context
+                if (year && !searchQuery.includes(year)) {
+                    searchQuery += ` ${year}`;
+                }
+                
+                // For better quality YouTube search results, add these terms
+                const isElectronic = /techno|house|electronic|ambient|dub|experimental/i.test(query + " " + label);
+                if (isElectronic) {
+                    // For electronic music, add vinyl/track terms for better results
+                    if (!searchQuery.toLowerCase().includes('vinyl') && !searchQuery.toLowerCase().includes('track')) {
+                        searchQuery += ' vinyl';
+                    }
+                } else {
+                    // For non-electronic, add 'official' for better results
+                    if (!searchQuery.toLowerCase().includes('official')) {
+                        searchQuery += ' official';
+                    }
+                }
+                
+                // Open YouTube in a new tab with autoplay
+                window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}&autoplay=1`, '_blank');
+            });
+        });
+        
+        // Add event listeners for release details buttons
+        document.querySelectorAll('.view-details-btn').forEach(button => {
+            button.addEventListener('click', async function() {
+                const releaseId = this.getAttribute('data-id');
+                const modal = document.getElementById('release-details-modal');
+                const detailsContainer = document.getElementById('release-details-container');
+                
+                // Show modal with loading state
+                modal.style.display = 'block';
+                detailsContainer.innerHTML = '<div class="loading">Loading release details...</div>';
+                
+                try {
+                    // Fetch release details
+                    const response = await fetch(`/discogs/release/${releaseId}`);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch release details');
+                    }
+                    
+                    const releaseData = await response.json();
+                    
+                    // Format and display release details
+                    let detailsHtml = `
+                        <div class="release-header">
+                            <div class="release-cover">
+                                <img src="${releaseData.images ? releaseData.images[0].uri : 'https://via.placeholder.com/300?text=No+Cover'}" 
+                                    alt="${releaseData.title}" class="cover-image">
+                            </div>
+                            <div class="release-main-info">
+                                <h2>${releaseData.artists_sort} - ${releaseData.title}</h2>
+                                <p class="release-meta">
+                                    <span class="release-label">${releaseData.labels ? releaseData.labels[0].name : ''}</span>
+                                    <span class="release-cat">${releaseData.labels ? releaseData.labels[0].catno : ''}</span>
+                                    <span class="release-year">${releaseData.year || 'Unknown Year'}</span>
+                                </p>
+                                <p class="release-format">${releaseData.formats ? releaseData.formats.map(f => f.name + (f.descriptions ? ' - ' + f.descriptions.join(', ') : '')).join(', ') : ''}</p>
+                                
+                                <button class="play-album-btn" 
+                                    data-query="${encodeURIComponent(`${releaseData.artists_sort} - ${releaseData.title}`)}"
+                                    data-artist="${encodeURIComponent(releaseData.artists_sort)}"
+                                    data-title="${encodeURIComponent(releaseData.title)}"
+                                    data-catno="${encodeURIComponent(releaseData.labels ? releaseData.labels[0].catno : '')}"
+                                    data-label="${encodeURIComponent(releaseData.labels ? releaseData.labels[0].name : '')}"
+                                    data-year="${encodeURIComponent(releaseData.year || '')}">
+                                    <span class="play-icon">▶</span> Play Album
+                                </button>
+                                <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${releaseData.artists_sort} - ${releaseData.title}`)}&autoplay=1" 
+                                    target="_blank" class="youtube-link" style="margin-left: 10px;">
+                                    <i class="youtube-icon">▶</i> Open on YouTube
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Add tracklist if available
+                    if (releaseData.tracklist && releaseData.tracklist.length > 0) {
+                        detailsHtml += `
+                            <div class="release-tracklist">
+                                <h3>Tracklist</h3>
+                                <ul class="tracks">
+                        `;
+                        
+                        releaseData.tracklist.forEach((track, index) => {
+                            // Get track artist - use the track-specific artist if available, otherwise release artist
+                            const trackArtist = track.artists ? track.artists.map(a => a.name).join(', ') : releaseData.artists_sort;
+                            
+                            // Include extra metadata in data attributes to improve YouTube search
+                            detailsHtml += `
+                                <li class="release-track">
+                                    <div class="track-position">${track.position || (index + 1)}</div>
+                                    <div class="track-title">${track.title}</div>
+                                    <div class="track-duration">${track.duration || ''}</div>
+                                    <div class="track-actions">
+                                        <button class="play-track-btn" 
+                                            data-query="${encodeURIComponent(`${trackArtist} - ${track.title}`)}"
+                                            data-artist="${encodeURIComponent(trackArtist)}"
+                                            data-title="${encodeURIComponent(track.title)}"
+                                            data-catno="${encodeURIComponent(releaseData.labels ? releaseData.labels[0].catno : '')}"
+                                            data-label="${encodeURIComponent(releaseData.labels ? releaseData.labels[0].name : '')}"
+                                            data-year="${encodeURIComponent(releaseData.year || '')}">
+                                            <span class="play-icon">▶</span> Play
+                                        </button>
+                                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${trackArtist} - ${track.title}`)}&autoplay=1" 
+                                            target="_blank" class="youtube-link" style="margin-left: 5px;">
+                                            <i class="youtube-icon">▶</i> YouTube
+                                        </a>
+                                    </div>
+                                </li>
+                            `;
+                        });
+                        
+                        detailsHtml += `
+                                </ul>
+                            </div>
+                        `;
+                    }
+                    
+                    // Add additional info if available
+                    if (releaseData.notes) {
+                        detailsHtml += `
+                            <div class="release-notes">
+                                <h3>Notes</h3>
+                                <p>${releaseData.notes}</p>
+                            </div>
+                        `;
+                    }
+                    
+                    detailsContainer.innerHTML = detailsHtml;
+                    
+                    // Add event listeners to play buttons in the modal
+                    detailsContainer.querySelectorAll('.play-track-btn, .play-album-btn').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const query = this.getAttribute('data-query');
+                            
+                            // Build release info object with all available metadata
+                            const releaseInfo = {
+                                label: this.getAttribute('data-label') ? decodeURIComponent(this.getAttribute('data-label')) : 
+                                        (releaseData.labels ? releaseData.labels[0].name : ''),
+                                year: this.getAttribute('data-year') ? decodeURIComponent(this.getAttribute('data-year')) : 
+                                        (releaseData.year || ''),
+                                catno: this.getAttribute('data-catno') ? decodeURIComponent(this.getAttribute('data-catno')) : 
+                                        (releaseData.labels ? releaseData.labels[0].catno : ''),
+                                artist: this.getAttribute('data-artist') ? decodeURIComponent(this.getAttribute('data-artist')) : 
+                                        releaseData.artists_sort,
+                                title: this.getAttribute('data-title') ? decodeURIComponent(this.getAttribute('data-title')) : ''
+                            };
+                            
+                            playDiscogsTrack(query, releaseInfo);
+                        });
+                    });
+                    
+                } catch (error) {
+                    console.error('Error fetching release details:', error);
+                    detailsContainer.innerHTML = `<div class="error">Failed to load release details: ${error.message}</div>`;
+                }
+            });
+        });
+        
+        // Add close event for the modal
+        document.querySelector('.close-modal').addEventListener('click', function() {
+            document.getElementById('release-details-modal').style.display = 'none';
+        });
+        
+        // Close modal when clicking outside of it
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('release-details-modal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+    }
+    
+    // Function to format time in MM:SS format
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        seconds = Math.floor(seconds % 60);
+        return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}`;
+    }
+    
+    // Function to update player time display
+    function updateTimeDisplay(playerId, currentTime, duration) {
+        const timeDisplay = document.querySelector(`#time-display-${playerId}`);
+        if (timeDisplay) {
+            timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+        }
+    }
+    
+    // Function to handle failed video loading
+    function handleVideoError(trackItem, errorMsg = "Failed to load video") {
+        if (trackItem) {
+            const playerContainer = trackItem.querySelector('.inline-player-container');
+            if (playerContainer) {
+                // Don't completely replace the container's HTML to preserve the retry button if present
+                const errorDiv = playerContainer.querySelector('.player-error') || document.createElement('div');
+                errorDiv.className = 'player-error';
+                errorDiv.style.display = 'block';
+                errorDiv.innerHTML = `
+                        <i class="player-error-icon">⚠️</i> ${errorMsg}
+                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(trackItem.querySelector('.track-name').textContent)}&autoplay=1" 
+                           target="_blank" style="color: #fff; text-decoration: underline; margin-left: 10px;">
+                           Try on YouTube
+                        </a>
+                `;
+                
+                // Find the YouTube iframe and hide it (don't remove it)
+                const iframeWrapper = playerContainer.querySelector('.youtube-player-wrapper');
+                if (iframeWrapper) {
+                    // Just hide the iframe wrapper instead of removing
+                    iframeWrapper.style.display = 'none';
+                }
+                
+                // If we don't have an error div already in the DOM, add it
+                if (!playerContainer.querySelector('.player-error')) {
+                    // Either add it at the start or after the iframe wrapper
+                    if (iframeWrapper) {
+                        iframeWrapper.insertAdjacentElement('afterend', errorDiv);
+                    } else {
+                        playerContainer.insertAdjacentElement('afterbegin', errorDiv);
+                    }
+                }
+                
+                // Make sure the retry button is still visible
+                const retryButton = playerContainer.querySelector('.retry-button');
+                if (retryButton) {
+                    retryButton.style.display = 'inline-block';
+                }
+            }
+            
+            // Update play button state but preserve function to retry
+            const playButton = trackItem.querySelector('.play-button');
+            if (playButton) {
+                playButton.innerHTML = '<span class="play-icon">▶</span> Retry';
+                
+                // Remove any existing click handlers
+                const newPlayButton = playButton.cloneNode(true);
+                playButton.parentNode.replaceChild(newPlayButton, playButton);
+                
+                // Add a new click handler
+                newPlayButton.addEventListener('click', function() {
+                    const query = this.dataset.query;
+                    // Reset error state first
+                    const errorDiv = trackItem.querySelector('.player-error');
+                    if (errorDiv) {
+                        errorDiv.style.display = 'none';
+                    }
+                    
+                    // Show iframe again if it exists
+                    const iframeWrapper = trackItem.querySelector('.youtube-player-wrapper');
+                    if (iframeWrapper) {
+                        iframeWrapper.style.display = 'block';
+                    }
+                    
+                    // Retry search
+                    searchYouTube(query, trackItem);
+                });
+            }
+            
+            // Only remove now-playing class if we're handling a true error
+            if (errorMsg.includes("Failed")) {
+            trackItem.classList.remove('now-playing');
+            }
+        }
+    }
+                    
+    // Search YouTube for a track (existing functionality)
+    async function searchYouTube(query, trackItem = null) {
+        try {
+            // First decode the URI component if it's encoded
+            let searchQuery = decodeURIComponent(query);
+            
+            // Show loading state immediately for better user feedback
+            if (trackItem) {
+                trackItem.classList.add('now-playing');
+                const playButton = trackItem.querySelector('.play-button');
+                if (playButton) {
+                    playButton.innerHTML = '<span class="playing-indicator">Loading...</span>';
+                }
+                
+                const playerContainer = trackItem.querySelector('.inline-player-container');
+                if (playerContainer) {
+                    playerContainer.innerHTML = `
+                        <div class="loading-indicator" style="padding: 10px; text-align: center;">
+                            Searching for track... <span style="display: inline-block; animation: spin 1s infinite linear;">⏳</span>
+                        </div>
+                    `;
+                    playerContainer.style.display = 'block';
+                }
+            }
+            
+            // Log the original query for debugging
+            console.log("Original query:", searchQuery);
+            
+            // Extract track details as much as possible
+            let artist = null;
+            let title = null;
+            let label = null;
+            let catalog = null;
+            let isVinyl = false;
+            
+            // For patterns like "[43] Artist - Title [Label]", extract the useful parts
+            let formattedQuery = searchQuery;
+            
+            // First, remove any track number prefix like [01] or [001]
+            formattedQuery = formattedQuery.replace(/^\s*\[\d+\]\s*/, '').trim();
+            
+            // Extract catalog number and label in brackets at the end [Label - Catalog]
+            const labelCatalogMatch = formattedQuery.match(/\[([^\]]+)\]$/);
+            if (labelCatalogMatch) {
+                // Extract the content inside brackets
+                const bracketContent = labelCatalogMatch[1].trim();
+                
+                // Check if the content has a separator
+                if (bracketContent.includes(' - ')) {
+                    const parts = bracketContent.split(' - ');
+                    label = parts[0].trim();
+                    catalog = parts[1].trim();
+                    
+                    // Log extracted values
+                    console.log("Extracted Artist:", artist || "Not found");
+                    console.log("Extracted Title:", title || "Not found");
+                    console.log("Extracted Label:", label || "Not found");
+                    console.log("Extracted Catalog:", catalog || "Not found");
+                } else {
+                    // Assume it's just the label
+                    label = bracketContent;
+                    console.log("Extracted Artist:", artist || "Not found");
+                    console.log("Extracted Title:", title || "Not found");
+                    console.log("Extracted Label:", label || "Not found");
+                }
+                
+                formattedQuery = formattedQuery.replace(/\[([^\]]+)\]$/, '').trim();
+            } else {
+                // Try to match a simple [Label] pattern
+                const simpleLabelMatch = formattedQuery.match(/\[([^\]]+)\]$/);
+                if (simpleLabelMatch) {
+                    label = simpleLabelMatch[1].trim();
+                    formattedQuery = formattedQuery.replace(/\[([^\]]+)\]$/, '').trim();
+                    console.log("Extracted Artist:", artist || "Not found");
+                    console.log("Extracted Title:", title || "Not found");
+                    console.log("Extracted Label:", label || "Not found");
+                }
+            }
+            
+            // Check for vinyl-specific tags
+            isVinyl = /vinyl|12"|12 inch|ep|lp|white label/i.test(searchQuery);
+            
+            // Handle specialized format patterns
+            if (formattedQuery.includes('id:') && formattedQuery.includes('track:')) {
+                formattedQuery = formattedQuery.split('track:')[1].trim();
+            } else if (formattedQuery.includes('track:')) {
+                formattedQuery = formattedQuery.split('track:')[1].trim();
+            }
+            
+            // Handle "Title by Artist" format
+            if (formattedQuery.includes(' by ')) {
+                const byMatch = formattedQuery.match(/(.+)\s+by\s+(.+)/i);
+                if (byMatch) {
+                    title = byMatch[1].trim();
+                    artist = byMatch[2].split(',')[0].trim();
+                    formattedQuery = `${artist} - ${title}`;
+                }
+            }
+            
+            // Handle inverted "Artist - Track (Remixer Remix)" format
+            if (!formattedQuery.includes(' - ') && formattedQuery.includes('(') && formattedQuery.match(/\([^)]*remix/i)) {
+                const parts = formattedQuery.split(' ');
+                // Assume the last name before parenthesis is the artist
+                const titleEndIndex = formattedQuery.indexOf('(') - 1;
+                if (titleEndIndex > 0) {
+                    artist = formattedQuery.substring(0, titleEndIndex).trim();
+                    title = formattedQuery.substring(titleEndIndex).trim();
+                    formattedQuery = `${artist} - ${title}`;
+                }
+            }
+            
+            // If we have an Artist - Title format, extract the parts
+            if (formattedQuery.includes(' - ')) {
+                const parts = formattedQuery.split(' - ');
+                artist = parts[0].trim();
+                title = parts.slice(1).join(' - ').trim(); // Join in case title itself contains dashes
+                
+                // Clean up artist and title but preserve important info like remixes
+                artist = artist.replace(/^\s*\([^)]*\)\s*/, '')
+                             .replace(/\s+$/, '')
+                             .replace(/^"(.*)"$/, '$1');
+                
+                title = title.replace(/\s+$/, '')
+                           .replace(/^"(.*)"$/, '$1');
+            }
+            
+            // Debug what we've extracted
+            console.log("Extracted Artist:", artist || "Not found");
+            console.log("Extracted Title:", title || "Not found");
+            console.log("Extracted Label:", label || "Not found");
+            console.log("Extracted Catalog:", catalog || "Not found");
+            
+            // Build the final search query
+            let enhancedSearchQuery = '';
+            if (artist && title) {
+                // Use artist and title if we have both (primary search)
+                enhancedSearchQuery = `${artist} - ${title}`;
+            } else {
+                // Otherwise use cleaned formattedQuery
+                enhancedSearchQuery = formattedQuery;
+            }
+            
+            // Ensure we don't have an empty query
+            if (!enhancedSearchQuery.trim()) {
+                // If everything was removed, revert to original query with minimal cleaning
+                enhancedSearchQuery = decodeURIComponent(query)
+                    .replace(/^\[\d+\]\s*/, '')
+                    .replace(/\[[^\]]*\]$/, '')
+                    .trim();
+            }
+            
+            // Add label for context with electronic music if appropriate
+            if (label && (isVinyl || /techno|house|electronic|dub|ambient|minimal/i.test(enhancedSearchQuery))) {
+                if (!enhancedSearchQuery.toLowerCase().includes(label.toLowerCase())) {
+                    enhancedSearchQuery = `${enhancedSearchQuery} ${label}`;
+                }
+            }
+            
+            console.log("Enhanced query for YouTube:", enhancedSearchQuery);
+            
+            // Try primary search with our enhanced query
+            const response = await fetch(`/search_video?query=${encodeURIComponent(enhancedSearchQuery)}&source=djset`);
+            
+            if (!response.ok) {
+                throw new Error(`YouTube search failed: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            // If no video found and we have both artist and title, try a more specific search
+            if (!data.videoId && artist && title) {
+                // Try with quotes for exact matching
+                const exactSearchQuery = `"${artist}" "${title}"`;
+                console.log("Trying exact search:", exactSearchQuery);
+                
+                const exactResponse = await fetch(`/search_video?query=${encodeURIComponent(exactSearchQuery)}&source=djset`);
+                
+                if (exactResponse.ok) {
+                    const exactData = await exactResponse.json();
+                    if (exactData.videoId) {
+                        console.log("Found match with exact search");
+                        Object.assign(data, exactData);
+                    }
+                }
+            }
+            
+            // If still no results, try with just the title (common issue with DJ sets)
+            if (!data.videoId && title) {
+                const titleOnlyQuery = title;
+                console.log("Trying title-only search:", titleOnlyQuery);
+                
+                const titleResponse = await fetch(`/search_video?query=${encodeURIComponent(titleOnlyQuery)}&source=djset`);
+                
+                if (titleResponse.ok) {
+                    const titleData = await titleResponse.json();
+                    if (titleData.videoId) {
+                        console.log("Found match with title-only search");
+                        Object.assign(data, titleData); 
+                    }
+                }
+            }
+            
+            // Play the video
+            const youtubeId = data.videoId;
+            
+            if (!youtubeId) {
+                throw new Error("No YouTube video found for this track");
+            }
+            
+            // If we're in a track item (DJ sets), use an inline player
+            if (trackItem) {
+                // Find all currently playing tracks and reset them
+                document.querySelectorAll('.track-item.now-playing').forEach(item => {
+                    if (item !== trackItem) {
+                        item.classList.remove('now-playing');
+                        const playerContainer = item.querySelector('.inline-player-container');
+                        if (playerContainer) {
+                            playerContainer.style.display = 'none';
+                            playerContainer.innerHTML = '';
+                        }
+                        
+                        // Reset play button text
+                        const playButton = item.querySelector('.play-button');
+                            if (playButton) {
+                            playButton.innerHTML = '<span class="play-icon">▶</span> Play';
+                        }
+                        
+                        // Clear any existing timers for this track
+                        const trackId = item.dataset.trackId;
+                        if (trackId && playerTimers[trackId]) {
+                            clearInterval(playerTimers[trackId]);
+                            delete playerTimers[trackId];
+                        }
+                    }
+                });
+                
+                // Generate a unique ID for this track player
+                const trackId = `track-${Date.now()}`;
+                trackItem.dataset.trackId = trackId;
+                
+                // Mark this track as now playing
+                trackItem.classList.add('now-playing');
+                
+                // Update play button
+                const playButton = trackItem.querySelector('.play-button');
+                if (playButton) {
+                    playButton.innerHTML = '<span class="playing-indicator">Now Playing</span>';
+                    
+                    // Change button to be a pause/play toggle
+                    playButton.classList.add('now-playing-button');
+                    
+                    // Clone and replace to remove existing listeners
+                    const newPlayButton = playButton.cloneNode(true);
+                    playButton.parentNode.replaceChild(newPlayButton, playButton);
+                    
+                    // Add toggle functionality
+                    newPlayButton.addEventListener('click', function() {
+                        const playerIframe = playerContainer.querySelector('iframe');
+                        if (playerIframe) {
+                            // Try to get the YouTube player object if available
+                            const player = window.YT && window.YT.get && window.YT.get(playerIframe.id);
+                            
+                            if (this.dataset.playerState === 'paused') {
+                                // Resume playing
+                                if (player && typeof player.playVideo === 'function') {
+                                    // Use YouTube API if available
+                                    player.playVideo();
+                                } else {
+                                    // Fallback to postMessage
+                                    playerIframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                                }
+                                this.innerHTML = '<span class="playing-indicator">Now Playing</span>';
+                                this.dataset.playerState = 'playing';
+                            } else {
+                                // Pause video
+                                if (player && typeof player.pauseVideo === 'function') {
+                                    // Use YouTube API if available
+                                    player.pauseVideo();
+                                } else {
+                                    // Fallback to postMessage
+                                    playerIframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+                                }
+                                this.innerHTML = '<span class="playing-indicator">▶ Resume</span>';
+                                this.dataset.playerState = 'paused';
+                            }
+                        }
+                    });
+
+                    // Initialize state as playing
+                    newPlayButton.dataset.playerState = 'playing';
+                }
+                
+                // Set up the player in the inline container
+                const playerContainer = trackItem.querySelector('.inline-player-container');
+                if (playerContainer) {
+                    // Show loading indicator first
+                    playerContainer.innerHTML = `
+                        <div class="loading-indicator" style="padding: 10px; text-align: center;">
+                            Loading track... <span style="display: inline-block; animation: spin 1s infinite linear;">⏳</span>
+                        </div>
+                    `;
+                    playerContainer.style.display = 'block';
+                    
+                    // Create a unique ID for this track player instance
+                    const playerId = `yt-player-${Date.now()}`;
+                    
+                    // Create the iframe with direct YouTube player
+                    playerContainer.innerHTML = `
+                        <div class="youtube-player-wrapper">
+                            <iframe id="${playerId}" 
+                                width="100%" 
+                                height="90" 
+                                src="https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=0&start=120&enablejsapi=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&fs=0&modestbranding=1" 
+                                title="YouTube video player"
+                                frameborder="0" 
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                allowfullscreen
+                                onload="this.dataset.loaded='true'"
+                                onerror="this.dataset.error='true'">
+                            </iframe>
+                        </div>
+                        <div class="audio-controls">
+                            <div class="time-display" id="time-display-${playerId}">2:00 / 0:00</div>
+                            <div class="player-actions">
+                            <a href="https://www.youtube.com/watch?v=${youtubeId}&t=120&autoplay=1" target="_blank" style="margin-right: 15px;" class="youtube-link">
+                                <i class="youtube-icon">▶</i> Open in YouTube
+                            </a>
+                                <button class="retry-button" style="display:none;" data-query="${encodeURIComponent(searchQuery)}" data-player-id="${playerId}">
+                                    Try Again
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Register this iframe with YouTube API
+                    setTimeout(() => {
+                        try {
+                            if (window.YT && window.YT.Player) {
+                                // If YT API is ready, create a player instance for this iframe
+                                const player = new YT.Player(playerId, {
+                                    height: '360',
+                                    width: '640',
+                                    videoId: youtubeId,
+                                    playerVars: {
+                                        autoplay: 1,
+                                        mute: 0,
+                                        start: 120, // Start at 2:00
+                                        enablejsapi: 1,
+                                        origin: window.location.origin,
+                                        playsinline: 1,
+                                        modestbranding: 1,
+                                        rel: 0
+                                    },
+                                    events: {
+                                        'onReady': function(event) {
+                                            console.log("YouTube player ready:", playerId);
+                                            // Force play when ready
+                                            event.target.playVideo();
+                                            event.target.unMute();
+                                            
+                                            // Sometimes the YouTube API doesn't start playing properly
+                                            // Try multiple attempts to ensure playback
+                                            let playAttempts = 0;
+                                            const maxPlayAttempts = 5;
+                                            const ensurePlayback = function() {
+                                                if (playAttempts >= maxPlayAttempts) return;
+                                                
+                                                const state = event.target.getPlayerState();
+                                                // If not playing (1), try to play again
+                                                if (state !== 1) {
+                                                    console.log(`Retry play attempt ${playAttempts+1} for ${playerId}`);
+                                                    event.target.playVideo();
+                                                    event.target.unMute();
+                                                    playAttempts++;
+                                                    setTimeout(ensurePlayback, 1000);
+                                                }
+                                            };
+                                            
+                                            // Start checking playback
+                                            setTimeout(ensurePlayback, 500);
+                                        },
+                                        'onStateChange': function(event) {
+                                            // Update button state based on player state
+                                            const playButton = trackItem.querySelector('.play-button');
+                                            if (playButton && playButton.classList.contains('now-playing-button')) {
+                                                // YT.PlayerState.PLAYING = 1, YT.PlayerState.PAUSED = 2
+                                                if (event.data === 1) { // playing
+                                                    playButton.innerHTML = '<span class="playing-indicator">Now Playing</span>';
+                                                    playButton.dataset.playerState = 'playing';
+                                                } else if (event.data === 2) { // paused
+                                                    playButton.innerHTML = '<span class="playing-indicator">▶ Resume</span>';
+                                                    playButton.dataset.playerState = 'paused';
+                                                } else if (event.data === 0) { // ended
+                                                    playButton.innerHTML = '<span class="playing-indicator">▶ Replay</span>';
+                                                    playButton.dataset.playerState = 'ended';
+                                                }
+                                            }
+                                        },
+                                        'onError': function(event) {
+                                            console.error(`YouTube player error (${playerId}):`, event.data);
+                                            // Try to recover by opening direct YouTube search in new tab
+                                            const searchTerm = trackItem.querySelector('.track-name').textContent;
+                                            const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}&autoplay=1&mute=0`;
+                                            window.open(searchUrl, '_blank');
+                                            
+                                            // Show error message
+                                            handleVideoError(trackItem, "Video playback error - opened search in new tab");
+                                        }
+                                    }
+                                });
+                            }
+                        } catch (err) {
+                            console.error("Error initializing YouTube player:", err);
+                        }
+                    }, 1000);
+                    
+                    // Add YouTube API script if not already loaded
+                    if (!window.YT) {
+                        const tag = document.createElement('script');
+                        tag.src = "https://www.youtube.com/iframe_api";
+                        const firstScriptTag = document.getElementsByTagName('script')[0];
+                        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+                    }
+                    
+                    // Start timer at 120 seconds (2:00)
+                    let currentTime = 120; 
+                    const timeDisplayElement = document.getElementById(`time-display-${playerId}`);
+                    
+                    // We don't know the actual duration yet, using placeholder
+                    let duration = 240; // Default 4 min placeholder
+                    
+                    // Update display immediately
+                    if (timeDisplayElement) {
+                        updateTimeDisplay(playerId, currentTime, duration);
+                    }
+                    
+                    // Create timer to update time
+                    const timerId = setInterval(() => {
+                        currentTime++;
+                        if (timeDisplayElement) {
+                            updateTimeDisplay(playerId, currentTime, duration);
+                        }
+                        // Reasonable maximum for cleanup if needed
+                        if (currentTime > 600) { // 10 minutes
+                            clearInterval(timerId);
+                        }
+                    }, 1000);
+                    
+                    // Save the timer ID for cleanup
+                    playerTimers[trackItem.dataset.trackId] = timerId;
+                    
+                    // Set a timeout to verify if player is working - using a safer approach
+                    const checkIframeLoaded = function() {
+                        const iframe = document.getElementById(playerId);
+                        if (!iframe) {
+                            handleVideoError(trackItem, "Player failed to load - try opening in YouTube");
+                                clearInterval(timerId);
+                            return;
+                        }
+                        
+                        // Check if the iframe was loaded successfully (using dataset flag set by onload)
+                        if (iframe.dataset.loaded === 'true') {
+                            console.log("YouTube iframe loaded successfully:", playerId);
+                            // Hide retry button if visible
+                            const retryButton = playerContainer.querySelector('.retry-button');
+                            if (retryButton) retryButton.style.display = 'none';
+                            return;
+                        }
+                        
+                        // Check if there was an error
+                        if (iframe.dataset.error === 'true' || !iframe.src.includes('youtube.com')) {
+                            showRetryOptions();
+                            return;
+                        }
+                        
+                        // If we've waited too long, assume it failed
+                        if (retryCount >= maxRetries) {
+                            showRetryOptions();
+                            return;
+                        }
+                        
+                        // Try again in a second
+                        retryCount++;
+                        setTimeout(checkIframeLoaded, 1000);
+                    };
+                    
+                    // Function to show retry options
+                    const showRetryOptions = function() {
+                        // Show retry button
+                        const retryButton = playerContainer.querySelector('.retry-button');
+                        if (retryButton) {
+                            retryButton.style.display = 'inline-block';
+                            
+                            // Only add event listener if needed
+                            if (!retryButton.hasAttribute('data-has-listener')) {
+                                retryButton.setAttribute('data-has-listener', 'true');
+                                retryButton.addEventListener('click', function() {
+                                    // Get the original query and try a different approach
+                                    const originalQuery = decodeURIComponent(this.dataset.query);
+                                    
+                                    // Create a fallback query - try just the title part if it was Artist - Title format
+                                    let fallbackQuery = originalQuery;
+                                    if (originalQuery.includes(' - ')) {
+                                        fallbackQuery = originalQuery.split(' - ')[1].trim();
+                                    }
+                                    
+                                    // Try with the fallback query
+                                    fetch(`/search_video?query=${encodeURIComponent(fallbackQuery)}&source=djset`)
+                                        .then(response => response.json())
+                                        .then(data => {
+                                            if (data.videoId) {
+                                                // Update iframe with new video
+                                                const newPlayerId = this.dataset.playerId;
+                                                const iframe = document.getElementById(newPlayerId);
+                                                if (iframe) {
+                                                    iframe.src = `https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=0&start=120&enablejsapi=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&fs=0&modestbranding=1`;
+                                                    
+                                                    // Update YouTube link
+                                                    const ytLink = playerContainer.querySelector('.youtube-link');
+                                                    if (ytLink) {
+                                                        ytLink.href = `https://www.youtube.com/watch?v=${data.videoId}&t=120&autoplay=1`;
+                                                    }
+                                                    
+                                                    // Hide retry button
+                                                    this.style.display = 'none';
+                                                    
+                                                    // Hide any error message
+                                                    const errorDiv = playerContainer.querySelector('.player-error');
+                                                    if (errorDiv) errorDiv.style.display = 'none';
+                                                    
+                                                    // Show iframe wrapper
+                                                    const iframeWrapper = playerContainer.querySelector('.youtube-player-wrapper');
+                                                    if (iframeWrapper) iframeWrapper.style.display = 'block';
+                                                }
+                                            } else {
+                                                handleVideoError(trackItem, "Failed to find alternative video");
+                                            }
+                                        })
+                                        .catch(error => {
+                                            console.error("Error on retry:", error);
+                                            handleVideoError(trackItem, "Failed to retry video search");
+                                        });
+                                });
+                            }
+                        }
+                        
+                        // Display error with retry option
+                        handleVideoError(trackItem, "Video loading issue - try opening in YouTube or retry");
+                        
+                        // Clear the timer
+                        if (timerId) {
+                            clearInterval(timerId);
+                        }
+                    };
+                    
+                    // Start checking - with timeout
+                    let retryCount = 0;
+                    const maxRetries = 10;
+                    setTimeout(checkIframeLoaded, 2000);
+                }
+        } else {
+                // If we're in label discography or outside a track, use the modal player
+                // If we have a video player already, use that
+                if (window.ytPlayer) {
+                    // Load and play the new video
+                    window.ytPlayer.loadVideoById({
+                        videoId: youtubeId,
+                        startSeconds: 120 // Start at 2:00
+                    });
+                    
+                    // Reset and start timer for the modal player
+                    if (window.modalPlayerTimer) {
+                        clearInterval(window.modalPlayerTimer);
+                    }
+                    
+                    let currentTime = 120; // Start at 2:00
+                    const duration = 240; // Average track length of 4 minutes
+                    const timeDisplay = document.getElementById('modal-time-display');
+                    if (timeDisplay) {
+                        timeDisplay.textContent = formatTime(currentTime) + " / " + formatTime(duration);
+                        
+                        window.modalPlayerTimer = setInterval(() => {
+                            currentTime++;
+                            if (currentTime <= 600) { // Limit to 10 min
+                                updateTimeDisplay('modal', currentTime, duration);
+            } else {
+                                clearInterval(window.modalPlayerTimer);
+                            }
+                        }, 1000);
+                    }
+                } else {
+                    // Create a new player
+                    const playerContainer = document.createElement('div');
+                    playerContainer.id = 'youtube-player-container';
+                    playerContainer.innerHTML = `
+                        <div id="youtube-player">
+                            <div class="loading-indicator" style="padding: 20px; text-align: center; background: #f5f5f5;">
+                                Loading YouTube player... <span style="display: inline-block; animation: spin 1s infinite linear;">⏳</span>
+                            </div>
+                        </div>
+                        <div class="player-controls">
+                            <div id="modal-time-display" class="time-display" style="margin-right: auto; padding: 5px 10px;">2:00 / 0:00</div>
+                            <a href="https://www.youtube.com/watch?v=${youtubeId}&t=120&autoplay=1" target="_blank" style="margin-right: 15px;" class="youtube-link">
+                                <i class="youtube-icon">▶</i> Open in YouTube
+                            </a>
+                            <button id="close-player">Close Player</button>
+                        </div>
+                    `;
+                    
+                    // Add a simple animation for the loading spinner
+                    if (!document.getElementById('spin-animation-style')) {
+                        const style = document.createElement('style');
+                        style.id = 'spin-animation-style';
+                        style.textContent = `
+                            @keyframes spin {
+                                0% { transform: rotate(0deg); }
+                                100% { transform: rotate(360deg); }
+                            }
+                            
+                            .player-controls {
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    }
+                    
+                    // Insert at the top of the results
+                    resultsContainer.insertBefore(playerContainer, resultsContainer.firstChild);
+                    
+                    // Initialize YouTube player
+                    window.onYouTubeIframeAPIReady = function() {
+                        window.ytPlayer = new YT.Player('youtube-player', {
+                            height: '360',
+                            width: '640',
+                            videoId: youtubeId,
+                            playerVars: {
+                                autoplay: 1,
+                                mute: 0,
+                                start: 120, // Start at 2:00
+                                enablejsapi: 1,
+                                origin: window.location.origin,
+                                playsinline: 1,
+                                modestbranding: 1,
+                                rel: 0
+                            },
+                            events: {
+                                'onReady': function(event) {
+                                    // Force play when ready
+                                    event.target.playVideo();
+                                    event.target.unMute(); // Ensure sound is on
+                                    
+                                    // Start timer
+                                    let currentTime = 120; // Start at 2:00
+                                    const duration = 240; // Average track length of 4 minutes
+                                    const timeDisplay = document.getElementById('modal-time-display');
+                                    if (timeDisplay) {
+                                        updateTimeDisplay('modal', currentTime, duration);
+                                        
+                                        window.modalPlayerTimer = setInterval(() => {
+                                            currentTime++;
+                                            if (currentTime <= duration) {
+                                                updateTimeDisplay('modal', currentTime, duration);
+                    } else {
+                                                clearInterval(window.modalPlayerTimer);
+                                }
+                            }, 1000);
+                                    }
+                                },
+                                'onError': function(event) {
+                                    // Handle YouTube player errors
+                                    console.error('YouTube player error:', event.data);
+                                    const playerDiv = document.getElementById('youtube-player');
+                                    if (playerDiv) {
+                                        playerDiv.innerHTML = `
+                                            <div style="padding: 20px; background: #000; color: #fff; text-align: center;">
+                                                <p>Error loading video. This may be due to:</p>
+                                                <ul style="text-align: left; margin: 10px 0; list-style-type: none; padding-left: 0;">
+                                                    <li>- Video restrictions (region-blocked or removed)</li>
+                                                    <li>- YouTube API limitations</li>
+                                                </ul>
+                                                <p>
+                                                    <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}&autoplay=1" 
+                                                       target="_blank" style="color: #fff; text-decoration: underline;">
+                                                       Try searching directly on YouTube
+                                                    </a>
+                                                </p>
+                                            </div>
+                                        `;
+                                    }
+                                    
+                                    if (window.modalPlayerTimer) {
+                                        clearInterval(window.modalPlayerTimer);
+                                    }
+                                }
+                            }
+                        });
+                    };
+                    
+                    // If YouTube API is already loaded
+                    if (typeof YT !== 'undefined' && YT.Player) {
+                        window.onYouTubeIframeAPIReady();
+                    }
+                    
+                    // Add close button event
+                    document.getElementById('close-player').addEventListener('click', function() {
+                        if (window.ytPlayer) {
+                            window.ytPlayer.stopVideo();
+                            window.ytPlayer = null;
+                        }
+                        
+                        if (window.modalPlayerTimer) {
+                            clearInterval(window.modalPlayerTimer);
+                            window.modalPlayerTimer = null;
+                        }
+                        
+                        playerContainer.remove();
+                    });
+                }
+            }
+        } catch (error) {
+            console.error("YouTube search error:", error);
+            if (trackItem) {
+                handleVideoError(trackItem, error.message || "Failed to search YouTube.");
+            } else {
+                showError(error.message || "Failed to search YouTube.");
+            }
+        }
+    }
+    
+    // Additional error handling for YouTube player API
+    window.onYouTubeIframeAPIError = function(error) {
+        console.error("YouTube iframe API failed to load:", error);
+        showError("YouTube player failed to load. Please try again later.");
+    };
+
+    // Function to play a Discogs release track with better error handling
+    async function playDiscogsTrack(query, releaseInfo) {
+        try {
+            // Show loading state
+            const loadingContainer = document.createElement('div');
+            loadingContainer.id = 'discogs-loading-container';
+            loadingContainer.innerHTML = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; padding: 10px; background-color: #000; color: #fff; text-align: center; z-index: 9999; font-family: 'Courier Prime', monospace;">
+                    <div style="font-weight: bold;">Searching for exact track match:</div>
+                    <div>${query}</div>
+                    <div style="font-size: 12px; margin-top: 5px; opacity: 0.8;">
+                        ${releaseInfo && releaseInfo.catno ? `Catalog: ${releaseInfo.catno} | ` : ''}
+                        ${releaseInfo && releaseInfo.label ? `Label: ${releaseInfo.label} | ` : ''}
+                        ${releaseInfo && releaseInfo.year ? `Year: ${releaseInfo.year}` : ''}
+                    </div>
+                    <div style="margin-top: 5px;"><span style="display: inline-block; animation: spin 1s infinite linear;">⏳</span> Finding accurate match...</div>
+                </div>
+            `;
+            document.body.appendChild(loadingContainer);
+            
+            // Create precise search query for YouTube
+            // Parse the query to extract artist and title
+            let artist = '';
+            let title = '';
+            let specificTrack = false;
+            
+            // Most Discogs entries follow "Artist - Title" format
+            if (query.includes(' - ')) {
+                [artist, title] = query.split(' - ').map(part => part.trim());
+                specificTrack = true;
+            } else {
+                // If no dash, use the whole query
+                title = query.trim();
+            }
+            
+            // Clean up artist and title
+            if (artist) {
+                // Remove anything in parentheses from artist but preserve important identifiers
+                artist = artist.replace(/\s*\((?!.*?(remix|mix|version|edit|remaster|feat|ft))([^)]*)\)\s*/gi, ' ').trim();
+            }
+            
+            if (title) {
+                // Remove anything in parentheses from title but preserve important identifiers
+                title = title.replace(/\s*\((?!.*?(remix|mix|version|edit|remaster|feat|ft))([^)]*)\)\s*/gi, ' ').trim();
+            }
+            
+            // Create exact artist/title query with quotes for more precise matching
+            let preciseQuery = '';
+            if (specificTrack && artist && title) {
+                // Use exact match search for known tracks
+                preciseQuery = `${artist} - ${title}`;
+            } else {
+                // Otherwise use the original query
+                preciseQuery = query;
+            }
+            
+            // Add release information for better context
+            let contextParams = '';
+            if (releaseInfo) {
+                // Add artist name if available and not already in the query
+                if (releaseInfo.artist && !preciseQuery.toLowerCase().includes(releaseInfo.artist.toLowerCase())) {
+                    preciseQuery = `${releaseInfo.artist} - ${preciseQuery}`;
+                    contextParams += ` by ${releaseInfo.artist}`;
+                }
+                
+                // Add catalog number if available (highly specific identifier)
+                if (releaseInfo.catno && !preciseQuery.includes(releaseInfo.catno)) {
+                    preciseQuery += ` [${releaseInfo.catno}]`;
+                    contextParams += ` with catalog ${releaseInfo.catno}`;
+                }
+                
+                // Add label name if available
+                if (releaseInfo.label && !preciseQuery.toLowerCase().includes(releaseInfo.label.toLowerCase())) {
+                    preciseQuery += ` [${releaseInfo.label}]`;
+                    contextParams += ` on ${releaseInfo.label}`;
+                }
+                
+                // Add year if available
+                if (releaseInfo.year && !preciseQuery.includes(releaseInfo.year)) {
+                    preciseQuery += ` (${releaseInfo.year})`;
+                    contextParams += ` from ${releaseInfo.year}`;
+                }
+            }
+            
+            console.log(`Searching YouTube for Discogs track: ${preciseQuery}${contextParams}`);
+            
+            // Try to search YouTube with our precise query, specifying source=discogs
+            const response = await fetch(`/search_video?query=${encodeURIComponent(preciseQuery)}&source=discogs`);
+            
+            if (!response.ok) {
+                throw new Error(`YouTube search failed: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            // Remove loading indicator
+            if (loadingContainer) {
+                loadingContainer.remove();
+            }
+            
+            if (!data.videoId) {
+                throw new Error("No YouTube results found for this track");
+            }
+            
+            // Get the enhanced query that was actually used on the backend
+            const enhancedQuery = data.query || preciseQuery;
+            const searchUrl = data.searchUrl || `https://www.youtube.com/results?search_query=${encodeURIComponent(enhancedQuery)}`;
+            
+            // Format title for display
+            const displayTitle = specificTrack ? `${artist} - ${title}` : query;
+            
+            // Load YouTube player with the video
+            const youtubeId = data.videoId;
+            
+            if (window.ytPlayer) {
+                // Load and play the new video in the existing player
+                window.ytPlayer.loadVideoById({
+                    videoId: youtubeId,
+                    startSeconds: 120 // Start at 2:00
+                });
+                
+                // Update player title
+                const playerTitle = document.getElementById('player-title');
+                if (playerTitle) {
+                    playerTitle.textContent = displayTitle;
+                    // Add subtitle showing what we searched for
+                    const playerSubtitle = document.getElementById('player-subtitle');
+                    if (playerSubtitle) {
+                        playerSubtitle.textContent = `Search: ${enhancedQuery}`;
+                    } else {
+                        const subtitle = document.createElement('div');
+                        subtitle.id = 'player-subtitle';
+                        subtitle.style.cssText = 'font-size: 12px; opacity: 0.8; margin-top: 5px;';
+                        subtitle.textContent = `Search: ${enhancedQuery}`;
+                        playerTitle.parentNode.appendChild(subtitle);
+                    }
+                    
+                    // Add metadata display
+                    if (releaseInfo && (releaseInfo.catno || releaseInfo.label || releaseInfo.year)) {
+                        let metadataDiv = document.getElementById('player-metadata');
+                        if (!metadataDiv) {
+                            metadataDiv = document.createElement('div');
+                            metadataDiv.id = 'player-metadata';
+                            metadataDiv.style.cssText = 'font-size: 11px; color: #ccc; margin-top: 5px;';
+                            playerTitle.parentNode.appendChild(metadataDiv);
+                        }
+                        
+                        // Build metadata string
+                        const metaParts = [];
+                        if (releaseInfo.catno) metaParts.push(`Catalog: ${releaseInfo.catno}`);
+                        if (releaseInfo.label) metaParts.push(`Label: ${releaseInfo.label}`);
+                        if (releaseInfo.year) metaParts.push(`Year: ${releaseInfo.year}`);
+                        
+                        metadataDiv.textContent = metaParts.join(' | ');
+                    }
+                }
+                
+                // Reset and start timer for the modal player
+                if (window.modalPlayerTimer) {
+                    clearInterval(window.modalPlayerTimer);
+                }
+                
+                let currentTime = 120; // Start at 2:00
+                const duration = 240; // Average track length of 4 minutes
+                const timeDisplay = document.getElementById('modal-time-display');
+                if (timeDisplay) {
+                    timeDisplay.textContent = formatTime(currentTime) + " / " + formatTime(duration);
+                    
+                    window.modalPlayerTimer = setInterval(() => {
+                        currentTime++;
+                        if (currentTime <= 600) { // Limit to 10 min
+                            updateTimeDisplay('modal', currentTime, duration);
+                        } else {
+                            clearInterval(window.modalPlayerTimer);
+                        }
+                    }, 1000);
+                }
+            } else {
+                // Create a new player
+                const playerContainer = document.createElement('div');
+                playerContainer.id = 'youtube-player-container';
+                playerContainer.innerHTML = `
+                    <div id="player-header" style="background-color: #000; color: #fff; padding: 10px; font-family: 'Courier Prime', monospace; font-weight: bold;">
+                        <div id="player-title" style="margin-bottom: 5px;">${displayTitle}</div>
+                        <div id="player-subtitle" style="font-size: 12px; opacity: 0.8;">Search: ${enhancedQuery}</div>
+                        ${releaseInfo ? `
+                        <div id="player-metadata" style="font-size: 11px; color: #ccc; margin-top: 5px;">
+                            ${releaseInfo.catno ? `Catalog: ${releaseInfo.catno} | ` : ''}
+                            ${releaseInfo.label ? `Label: ${releaseInfo.label} | ` : ''}
+                            ${releaseInfo.year ? `Year: ${releaseInfo.year}` : ''}
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div id="youtube-player">
+                        <div class="loading-indicator" style="padding: 20px; text-align: center; background: #f5f5f5;">
+                            Loading YouTube player... <span style="display: inline-block; animation: spin 1s infinite linear;">⏳</span>
+                        </div>
+                    </div>
+                    <div class="player-controls">
+                        <div id="modal-time-display" class="time-display" style="margin-right: auto; padding: 5px 10px;">2:00 / 0:00</div>
+                        <a href="${searchUrl}" target="_blank" style="margin-right: 15px;" class="youtube-link">
+                            <i class="youtube-icon">▶</i> Search Other Versions
+                        </a>
+                        <button id="retry-search" style="margin-right: 10px; background-color: #000000; color: #ffffff; border: 3px solid #000; padding: 8px 16px; cursor: pointer; font-family: 'Courier Prime', monospace; font-size: 0.9rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; transition: all 0.2s;">
+                            Try Different Search
+                        </button>
+                        <button id="close-player">Close Player</button>
+                    </div>
+                `;
+                
+                // Add a simple animation for the loading spinner
+                if (!document.getElementById('spin-animation-style')) {
+                    const style = document.createElement('style');
+                    style.id = 'spin-animation-style';
+                    style.textContent = `
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                        
+                        .player-controls {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+                
+                // Insert at the top of the results
+                resultsContainer.insertBefore(playerContainer, resultsContainer.firstChild);
+                
+                // Initialize YouTube player
+                window.onYouTubeIframeAPIReady = function() {
+                    window.ytPlayer = new YT.Player('youtube-player', {
+                        height: '360',
+                        width: '640',
+                        videoId: youtubeId,
+                        playerVars: {
+                            autoplay: 1,
+                            mute: 0,
+                            start: 120, // Start at 2:00
+                            enablejsapi: 1,
+                            origin: window.location.origin,
+                            playsinline: 1,
+                            modestbranding: 1,
+                            rel: 0
+                        },
+                        events: {
+                            'onReady': function(event) {
+                                // Force play when ready
+                                event.target.playVideo();
+                                event.target.unMute(); // Ensure sound is on
+                                
+                                // Start timer
+                                let currentTime = 120; // Start at 2:00
+                                const duration = 240; // Average track length of 4 minutes
+                                const timeDisplay = document.getElementById('modal-time-display');
+                                if (timeDisplay) {
+                                    updateTimeDisplay('modal', currentTime, duration);
+                                    
+                                    window.modalPlayerTimer = setInterval(() => {
+                                        currentTime++;
+                                        if (currentTime <= 600) { // Limit to 10 min
+                                            updateTimeDisplay('modal', currentTime, duration);
+                        } else {
+                                            clearInterval(window.modalPlayerTimer);
+                                        }
+                                    }, 1000);
+                                }
+                            },
+                            'onError': function(event) {
+                                // Handle YouTube player errors
+                                console.error('YouTube player error:', event.data);
+                                const playerDiv = document.getElementById('youtube-player');
+                                if (playerDiv) {
+                                    playerDiv.innerHTML = `
+                                        <div style="padding: 20px; background: #000; color: #fff; text-align: center;">
+                                            <p>Error loading video. This may be due to:</p>
+                                            <ul style="text-align: left; margin: 10px 0; list-style-type: none; padding-left: 0;">
+                                                <li>- Video restrictions (region-blocked or removed)</li>
+                                                <li>- YouTube API limitations</li>
+                                            </ul>
+                                            <p>
+                                                <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}&autoplay=1" 
+                                                   target="_blank" style="color: #fff; text-decoration: underline;">
+                                                   Try searching directly on YouTube
+                                                </a>
+                                            </p>
+                                        </div>
+                                    `;
+                                }
+                                
+                                if (window.modalPlayerTimer) {
+                                    clearInterval(window.modalPlayerTimer);
+                                }
+                            }
+                        }
+                    });
+                };
+                
+                // If YouTube API is already loaded
+                if (typeof YT !== 'undefined' && YT.Player) {
+                    window.onYouTubeIframeAPIReady();
+                }
+                
+                // Add close button event
+                document.getElementById('close-player').addEventListener('click', function() {
+                    if (window.ytPlayer) {
+                        window.ytPlayer.stopVideo();
+                        window.ytPlayer = null;
+                    }
+                    
+                    if (window.modalPlayerTimer) {
+                        clearInterval(window.modalPlayerTimer);
+                        window.modalPlayerTimer = null;
+                    }
+                    
+                    playerContainer.remove();
+                });
+                
+                // Add retry button event
+                document.getElementById('retry-search').addEventListener('click', function() {
+                    // Close the current player
+                    if (window.ytPlayer) {
+                        window.ytPlayer.stopVideo();
+                        window.ytPlayer = null;
+                    }
+                    
+                    if (window.modalPlayerTimer) {
+                        clearInterval(window.modalPlayerTimer);
+                        window.modalPlayerTimer = null;
+                    }
+                    
+                    playerContainer.remove();
+                    
+                    // Try different search strategies based on what we have
+                    if (specificTrack && artist && title) {
+                        // Create a dropdown menu with alternative search options
+                        const searchOptionsModal = document.createElement('div');
+                        searchOptionsModal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; padding: 15px; background-color: #000; color: #fff; text-align: center; z-index: 9999; font-family: "Courier Prime", monospace;';
+                        
+                        // Build alternative search options
+                        const alternativeSearches = [
+                            { name: "Just Title", query: title },
+                            { name: "Title + Label", query: `${title} ${releaseInfo && releaseInfo.label ? releaseInfo.label : ''}` },
+                            { name: "Title + Catalog Number", query: `${title} ${releaseInfo && releaseInfo.catno ? releaseInfo.catno : ''}` },
+                            { name: "Alternate Artist Format", query: `${title} by ${artist}` },
+                            { name: "Quoted Title", query: `"${title}"` }
+                        ];
+                        
+                        // For remixes, add special handling
+                        if (title.toLowerCase().includes('remix')) {
+                            const remixMatch = title.match(/\(([^)]+)\s+remix\)/i);
+                            if (remixMatch) {
+                                const remixer = remixMatch[1];
+                                const baseTitle = title.replace(/\([^)]+\s+remix\)/i, '').trim();
+                                alternativeSearches.push({ name: "Remix Format", query: `${baseTitle} ${remixer} remix` });
+                            }
+                        }
+                        
+                        // Build the modal content
+                        searchOptionsModal.innerHTML = `
+                            <div>
+                                <p><strong>Try Different Search Methods for:</strong> ${query}</p>
+                                <div style="margin: 15px 0;">
+                                    ${alternativeSearches.map((option, index) => `
+                                        <button data-query="${encodeURIComponent(option.query)}" class="alt-search-btn" style="display: inline-block; background: #000; color: #fff; border: 2px solid #fff; padding: 8px 15px; margin: 5px; cursor: pointer; font-family: 'Courier Prime', monospace;">
+                                            ${option.name}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                                <div style="margin-top: 10px;">
+                                    <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(query)}" target="_blank" 
+                                        style="display: inline-block; background: #fff; color: #000; padding: 5px 15px; text-decoration: none; margin-right: 10px;">
+                                        Open YouTube Search
+                                    </a>
+                                    <button id="close-search-options" style="background-color: #000000; color: #ffffff; border: 3px solid #fff; padding: 8px 16px; font-family: 'Courier Prime', monospace; font-size: 0.9rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; cursor: pointer;">
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(searchOptionsModal);
+                        
+                        // Add event listeners for alternate search buttons
+                        searchOptionsModal.querySelectorAll('.alt-search-btn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const altQuery = decodeURIComponent(this.getAttribute('data-query'));
+                                searchOptionsModal.remove();
+                                
+                                // Add extra context based on music type
+                                let finalQuery = altQuery;
+                                const isElectronic = /techno|house|electronic|ambient|dub/i.test(query) || 
+                                                   (releaseInfo && releaseInfo.label && /techno|house|electronic/i.test(releaseInfo.label));
+                                
+                                if (isElectronic && !finalQuery.toLowerCase().includes('vinyl')) {
+                                    finalQuery += ' vinyl';
+                                }
+                                
+                                // Add catalog if useful
+                                if (releaseInfo && releaseInfo.catno && !finalQuery.includes(releaseInfo.catno)) {
+                                    finalQuery += ` ${releaseInfo.catno}`;
+                                }
+                                
+                                // Try again with the new query
+                                playDiscogsTrack(finalQuery, releaseInfo);
+                            });
+                        });
+                        
+                        // Add close button handler
+                        document.getElementById('close-search-options').addEventListener('click', function() {
+                            searchOptionsModal.remove();
+                        });
+                        
+                        // Auto-remove after 30 seconds
+                        setTimeout(() => {
+                            if (document.body.contains(searchOptionsModal)) {
+                                searchOptionsModal.remove();
+                            }
+                        }, 30000);
+                    } else {
+                        // Try the simplest approach - title only or with a music indicator
+                        let altQuery = title || query;
+                        if (!/music|track|vinyl/i.test(altQuery)) {
+                            altQuery += ' music';
+                        }
+                        playDiscogsTrack(altQuery, releaseInfo);
+                    }
+                });
+            }
+        } catch (error) {
+            // Remove loading indicator if exists
+            const loadingContainer = document.getElementById('discogs-loading-container');
+            if (loadingContainer) {
+                loadingContainer.remove();
+            }
+            
+            console.error("Discogs YouTube search error:", error);
+            
+            // Show user-friendly error with search options
+            const errorModal = document.createElement('div');
+            errorModal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; background: #000; color: #fff; padding: 15px; text-align: center; z-index: 9999; font-family: "Courier Prime", monospace;';
+            
+            // Parse query to get cleaner search terms
+            let cleanQuery = query;
+            if (query.includes(' - ')) {
+                // Get just the title part for a more focused search
+                const titlePart = query.split(' - ')[1].trim();
+                cleanQuery = titlePart.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+            }
+            
+            errorModal.innerHTML = `
+                <div>
+                    <p><strong>Could not find this track on YouTube:</strong> ${query}</p>
+                    <p>${error.message}</p>
+                    <div style="margin-top: 10px;">
+                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(query)}" target="_blank" 
+                            style="display: inline-block; background: #fff; color: #000; padding: 5px 15px; text-decoration: none; margin-right: 10px;">
+                            Search Full Name
+                        </a>
+                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}" target="_blank" 
+                            style="display: inline-block; background: #333; color: #fff; padding: 5px 15px; text-decoration: none; margin-right: 10px;">
+                            Search Title Only
+                        </a>
+                        <button id="close-error" style="background-color: #000000; color: #ffffff; border: 3px solid #000; padding: 8px 16px; font-family: 'Courier Prime', monospace; font-size: 0.9rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: all 0.2s;">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(errorModal);
+            
+            // Add close button handler
+            document.getElementById('close-error').addEventListener('click', function() {
+                errorModal.remove();
+            });
+            
+            // Auto-remove after 20 seconds
+            setTimeout(() => {
+                if (document.body.contains(errorModal)) {
+                    errorModal.remove();
+                }
+            }, 20000);
+        }
+    }
+});
+
+// Global function to initialize YouTube iframe API
+function onYouTubeIframeAPIReady() {
+    console.log('YouTube iframe API is ready');
+    // Set a global flag indicating the API is ready
+    window.youTubeIframeAPIReady = true;
+}
+</script>
+{% endblock %}
