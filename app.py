@@ -847,9 +847,43 @@ def search_video():
             )
             
             if response.status_code == 200:
-                # Extract video IDs and check for exact matches
-                video_ids = re.findall(r"watch\?v=(\S{11})", response.text)
+                # Extract video IDs using multiple pattern matching approaches
+                video_ids = []
+                patterns = [
+                    '"videoId":"', 
+                    'watch?v=',
+                    '/embed/',
+                    '/v/'
+                ]
                 
+                for pattern in patterns:
+                    start_idx = response.text.find(pattern)
+                    if start_idx != -1:
+                        start_idx += len(pattern)
+                        
+                        # Determine end of video ID based on which pattern was found
+                        if pattern == '"videoId":"':
+                            end_idx = response.text.find('"', start_idx)
+                        else:
+                            # For URL patterns, look for ending delimiters
+                            end_idx = next((response.text.find(c, start_idx) for c in ['"', '&', '#', '?', ' '] 
+                                          if response.text.find(c, start_idx) != -1), len(response.text))
+                        
+                        if end_idx != -1:
+                            found_id = response.text[start_idx:end_idx]
+                            # Basic validation - YouTube IDs are usually 11 characters
+                            if len(found_id) == 11:
+                                video_ids.append(found_id)
+                                logger.info(f"Found video ID using pattern '{pattern}': {found_id}")
+                
+                # If no IDs found with patterns, try regex as a fallback
+                if not video_ids:
+                    regex_matches = re.findall(r'watch\?v=([a-zA-Z0-9_-]{11})', response.text)
+                    if regex_matches:
+                        video_ids = regex_matches
+                        logger.info(f"Found {len(video_ids)} video IDs using regex fallback")
+                
+                # If we found any video IDs with our robust extraction
                 if video_ids:
                     used_query = search_query
                     search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
