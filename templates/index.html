@@ -818,6 +818,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const resultsContainer = document.getElementById('results-container');
     const searchTypeInput = document.getElementById('search-type');
     
+    // Make sure YouTube iframe API is loaded
+    if (!window.YT) {
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+    }
+    
     // Search type toggle elements
     const toggleDJ = document.getElementById('toggle-dj');
     const toggleLabel = document.getElementById('toggle-label');
@@ -1972,6 +1980,49 @@ document.addEventListener('DOMContentLoaded', function() {
                 const playButton = trackItem.querySelector('.play-button');
                 if (playButton) {
                     playButton.innerHTML = '<span class="playing-indicator">Now Playing</span>';
+                    
+                    // Change button to be a pause/play toggle
+                    playButton.classList.add('now-playing-button');
+                    
+                    // Clone and replace to remove existing listeners
+                    const newPlayButton = playButton.cloneNode(true);
+                    playButton.parentNode.replaceChild(newPlayButton, playButton);
+                    
+                    // Add toggle functionality
+                    newPlayButton.addEventListener('click', function() {
+                        const playerIframe = playerContainer.querySelector('iframe');
+                        if (playerIframe) {
+                            // Try to get the YouTube player object if available
+                            const player = window.YT && window.YT.get && window.YT.get(playerIframe.id);
+                            
+                            if (this.dataset.playerState === 'paused') {
+                                // Resume playing
+                                if (player && typeof player.playVideo === 'function') {
+                                    // Use YouTube API if available
+                                    player.playVideo();
+                                } else {
+                                    // Fallback to postMessage
+                                    playerIframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                                }
+                                this.innerHTML = '<span class="playing-indicator">Now Playing</span>';
+                                this.dataset.playerState = 'playing';
+                            } else {
+                                // Pause video
+                                if (player && typeof player.pauseVideo === 'function') {
+                                    // Use YouTube API if available
+                                    player.pauseVideo();
+                                } else {
+                                    // Fallback to postMessage
+                                    playerIframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+                                }
+                                this.innerHTML = '<span class="playing-indicator">▶ Resume</span>';
+                                this.dataset.playerState = 'paused';
+                            }
+                        }
+                    });
+
+                    // Initialize state as playing
+                    newPlayButton.dataset.playerState = 'playing';
                 }
                 
                 // Set up the player in the inline container
@@ -2014,6 +2065,46 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         </div>
                     `;
+                    
+                    // Register this iframe with YouTube API
+                    setTimeout(() => {
+                        try {
+                            if (window.YT && window.YT.Player) {
+                                // If YT API is ready, create a player instance for this iframe
+                                new YT.Player(playerId, {
+                                    events: {
+                                        'onReady': function(event) {
+                                            console.log("YouTube player ready:", playerId);
+                                        },
+                                        'onStateChange': function(event) {
+                                            // Update button state based on player state
+                                            const playButton = trackItem.querySelector('.play-button');
+                                            if (playButton && playButton.classList.contains('now-playing-button')) {
+                                                // YT.PlayerState.PLAYING = 1, YT.PlayerState.PAUSED = 2
+                                                if (event.data === 1) { // playing
+                                                    playButton.innerHTML = '<span class="playing-indicator">Now Playing</span>';
+                                                    playButton.dataset.playerState = 'playing';
+                                                } else if (event.data === 2) { // paused
+                                                    playButton.innerHTML = '<span class="playing-indicator">▶ Resume</span>';
+                                                    playButton.dataset.playerState = 'paused';
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        } catch (err) {
+                            console.error("Error initializing YouTube player:", err);
+                        }
+                    }, 1000);
+                    
+                    // Add YouTube API script if not already loaded
+                    if (!window.YT) {
+                        const tag = document.createElement('script');
+                        tag.src = "https://www.youtube.com/iframe_api";
+                        const firstScriptTag = document.getElementsByTagName('script')[0];
+                        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+                    }
                     
                     // Start timer at 150 seconds (2:30)
                     let currentTime = 150; 
@@ -2686,5 +2777,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+
+// Global function to initialize YouTube iframe API
+function onYouTubeIframeAPIReady() {
+    console.log('YouTube iframe API is ready');
+    // Set a global flag indicating the API is ready
+    window.youTubeIframeAPIReady = true;
+}
 </script>
 {% endblock %}
