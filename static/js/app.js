@@ -514,9 +514,12 @@ document.addEventListener("DOMContentLoaded", function () {
                                     <span class="track-name">${trackName}</span>
                                 </div>
                                 <div class="track-actions">
-                                    <button class="play-button">
-                                        <span class="play-icon">▶</span> PLAY
-                                    </button>
+                                    <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(
+                                      trackName
+                                    )}&autoplay=1" 
+                                       target="_blank" class="youtube-link">
+                                       <i class="youtube-icon">▶</i> YouTube
+                                    </a>
                                 </div>
                             </div>
                             <div class="inline-player-container">
