@@ -2734,6 +2734,57 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
             
+            // Additional fallback: Try format-specific searches for electronic music
+            if ((!data || !data.videoId) && artist && title) {
+                const formatSearches = [
+                    `${artist} ${title} vinyl`,
+                    `${artist} ${title} EP`,
+                    `${artist} ${title} 12 inch`,
+                    `${artist} ${title} single`,
+                    `${artist} ${title} original mix`
+                ];
+                
+                for (const formatQuery of formatSearches) {
+                    try {
+                        console.log("Trying format search:", formatQuery);
+                        const formatResponse = await fetch(`/search_video?query=${encodeURIComponent(formatQuery)}&source=discogs`);
+                        
+                        if (formatResponse.ok) {
+                            const formatData = await formatResponse.json();
+                            if (formatData.videoId) {
+                                console.log("Found match with format search:", formatQuery);
+                                data = formatData;
+                                break; // Exit loop on first match
+                            }
+                        }
+                    } catch (error) {
+                        console.error("Format search error:", error);
+                        // Continue to next format
+                    }
+                }
+            }
+            
+            // Final fallback: Try simplified artist search for rare tracks
+            if ((!data || !data.videoId) && artist) {
+                try {
+                    const artistSearchQuery = `${artist} music`;
+                    console.log("Trying artist fallback search:", artistSearchQuery);
+                    
+                    const artistResponse = await fetch(`/search_video?query=${encodeURIComponent(artistSearchQuery)}&source=discogs`);
+                    
+                    if (artistResponse.ok) {
+                        const artistData = await artistResponse.json();
+                        if (artistData.videoId) {
+                            console.log("Found match with artist fallback search");
+                            data = artistData;
+                        }
+                    }
+                } catch (error) {
+                    console.error("Artist fallback search error:", error);
+                    // This is truly our last attempt
+                }
+            }
+            
             // Remove loading indicator
             if (loadingContainer) {
                 loadingContainer.remove();

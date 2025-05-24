@@ -759,17 +759,24 @@ def search_video():
                 # 1a. Add variant with label to further improve specificity
                 if label_info:
                     search_queries.append(f'"{artist}" "{title}" {catalog_num} {label_info}')
+                # 1b. Add variant with explicit music context for catalog searches
+                search_queries.append(f'"{artist}" "{title}" {catalog_num} music')
             
             # 2. Add quoted artist and title for exact match
             search_queries.append(f'"{artist}" "{title}"')
             
-            # 3. Add label info for context
+            # 3. Add label info for context with different priority levels
             if label_info:
                 search_queries.append(f'"{artist}" "{title}" {label_info}')
+                # 3a. Add label with explicit music context
+                search_queries.append(f'"{artist}" "{title}" {label_info} music')
                 
             # 4. Add year for temporal context
             if release_year:
                 search_queries.append(f'"{artist}" "{title}" {release_year}')
+                # 4a. Combine year with label for stronger context
+                if label_info:
+                    search_queries.append(f'"{artist}" "{title}" {label_info} {release_year}')
                 
             # 5. Add title with music/track keyword to improve relevance
             search_queries.append(f'"{artist}" "{title}" music track')
@@ -790,6 +797,9 @@ def search_video():
                 search_queries.append(f'"{artist}" "{title}" electronic vinyl')
                 if label_info:
                     search_queries.append(f'"{artist}" "{title}" {label_info} electronic')
+                # Add specific format context for electronic music
+                search_queries.append(f'"{artist}" "{title}" 12 inch')
+                search_queries.append(f'"{artist}" "{title}" EP')
                 
             # 8. Add individual term searches for better matching
             title_only_query = f'"{title}"'
@@ -804,6 +814,28 @@ def search_video():
                     remixer = remix_parts.group(2).strip()
                     # Try searching with the remix info in different formats
                     search_queries.append(f'"{base_track}" "{remixer}" remix')
+                    search_queries.append(f'"{artist}" "{base_track}" {remixer} remix')
+                    
+            # 10. Add format-specific searches for better matching
+            format_keywords = ['vinyl', 'digital', '12"', 'EP', 'single', 'release']
+            for format_keyword in format_keywords:
+                if format_keyword.lower() in query.lower():
+                    search_queries.append(f'"{artist}" "{title}" {format_keyword}')
+                    break
+                    
+            # 11. Add label-specific searches without quotes for broader matching
+            if label_info and len(label_info) > 3:
+                search_queries.append(f'{artist} {title} {label_info} records')
+                search_queries.append(f'{artist} {title} {label_info} music')
+                
+            # 12. Add searches optimized for underground electronic music
+            if is_underground and label_info:
+                underground_keywords = ['techno', 'house', 'minimal', 'electronic', 'underground']
+                for keyword in underground_keywords:
+                    if keyword in query.lower() or keyword in label_info.lower():
+                        search_queries.append(f'"{artist}" "{title}" {keyword}')
+                        search_queries.append(f'"{artist}" "{title}" {label_info} {keyword}')
+                        break
         else:
             # Regular DJ set searches
             # 1. Most specific search with artist, title and extra context
@@ -947,6 +979,57 @@ def search_video():
                         if catalog_num and catalog_num.lower() in surrounding_text:
                             score += 15  # Extra boost for catalog match in discogs searches
                         
+                        # Check for release year
+                        if release_year and release_year in surrounding_text:
+                            score += 10
+                            
+                        # Additional content indicators for Discogs searches
+                        good_indicators = ['official', 'full track', 'release', 'records', 'vinyl', 'album', 'single', 'EP', '12 inch', 'original mix']
+                        bad_indicators = ['mix compilation', 'megamix', 'mixtape', 'playlist', 'dj mix', 'full album', 'preview', 'live set', 'radio show']
+                        
+                        # Bonus for good indicators
+                        for indicator in good_indicators:
+                            if indicator in surrounding_text:
+                                score += 5
+                                
+                        # Penalty for bad indicators
+                        for indicator in bad_indicators:
+                            if indicator in surrounding_text:
+                                score -= 15
+                                
+                        # Special handling for electronic music labels and formats
+                        electronic_indicators = ['techno', 'house', 'minimal', 'electronic', 'underground', 'vinyl', '12"']
+                        for indicator in electronic_indicators:
+                            if indicator in surrounding_text and (label_info and indicator in label_info.lower()):
+                                score += 8  # Boost for matching electronic music context
+                                
+                        # Boost for exact catalog number patterns commonly used in electronic music
+                        if catalog_num:
+                            # Check for catalog patterns like "ABC001", "XYZ-123", etc.
+                            import re
+                            catalog_pattern = re.compile(r'\b' + re.escape(catalog_num) + r'\b', re.IGNORECASE)
+                            if catalog_pattern.search(surrounding_text):
+                                score += 20  # Strong boost for exact catalog match
+                                
+                        # Check for track duration indicators (full tracks vs previews/clips)
+                        duration_indicators = ['full track', 'complete', 'uncut', 'original length']
+                        preview_indicators = ['preview', 'snippet', 'clip', '30 second', 'sample']
+                        
+                        for indicator in duration_indicators:
+                            if indicator in surrounding_text:
+                                score += 8
+                                
+                        for indicator in preview_indicators:
+                            if indicator in surrounding_text:
+                                score -= 12  # Penalize previews/clips
+                                
+                        # Boost for official channel uploads
+                        official_channel_indicators = ['official', 'records', 'music', 'label']
+                        for indicator in official_channel_indicators:
+                            if indicator in surrounding_text:
+                                score += 6
+                    else:
+                        # Regular DJ set logic (existing code)
                         # Check for release year
                         if release_year and release_year in surrounding_text:
                             score += 10

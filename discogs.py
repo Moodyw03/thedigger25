@@ -62,4 +62,75 @@ def get_label_releases(label_id, page=1, per_page=100, sort='year', sort_order='
 
 def get_release_details(release_id):
     """Get detailed information about a specific release"""
-    return discogs_request(f'releases/{release_id}') 
+    release_data = discogs_request(f'releases/{release_id}')
+    
+    # Enhanced metadata processing for better YouTube search
+    if release_data:
+        # Clean and normalize artist names for better search
+        if 'artists' in release_data:
+            # Get primary artist name, handling various formats
+            artists = release_data['artists']
+            if artists:
+                primary_artist = artists[0].get('name', '')
+                # Remove common suffixes that might interfere with search
+                primary_artist = primary_artist.replace(' (2)', '').replace(' (3)', '').strip()
+                release_data['primary_artist'] = primary_artist
+        
+        # Extract and clean catalog number for better matching
+        if 'labels' in release_data and release_data['labels']:
+            for label in release_data['labels']:
+                if 'catno' in label and label['catno']:
+                    # Clean catalog number (remove extra spaces, normalize format)
+                    catalog = label['catno'].strip().upper()
+                    # Store cleaned catalog number
+                    label['catno_clean'] = catalog
+        
+        # Extract format information for better context
+        if 'formats' in release_data:
+            formats = release_data['formats']
+            format_info = []
+            for fmt in formats:
+                if 'name' in fmt:
+                    format_info.append(fmt['name'])
+                if 'descriptions' in fmt:
+                    format_info.extend(fmt['descriptions'])
+            
+            # Create a search-friendly format string
+            release_data['format_string'] = ' '.join(format_info).lower()
+            
+            # Detect if it's vinyl/electronic format
+            vinyl_indicators = ['vinyl', '12"', 'ep', 'single', 'maxi-single']
+            release_data['is_vinyl'] = any(indicator in release_data['format_string'] for indicator in vinyl_indicators)
+        
+        # Enhanced genre/style processing for electronic music detection
+        if 'genres' in release_data:
+            genres = [g.lower() for g in release_data['genres']]
+            electronic_genres = ['electronic', 'techno', 'house', 'ambient', 'drum & bass', 'dubstep', 'experimental']
+            release_data['is_electronic'] = any(genre in electronic_genres for genre in genres)
+        
+        if 'styles' in release_data:
+            styles = [s.lower() for s in release_data['styles']]
+            electronic_styles = ['techno', 'house', 'minimal', 'ambient', 'deep house', 'tech house', 'progressive house']
+            if not release_data.get('is_electronic'):
+                release_data['is_electronic'] = any(style in electronic_styles for style in styles)
+        
+        # Process tracklist for better individual track searches
+        if 'tracklist' in release_data:
+            for track in release_data['tracklist']:
+                if 'title' in track:
+                    # Clean track title for better search
+                    clean_title = track['title'].strip()
+                    # Remove common prefixes/suffixes that might interfere
+                    clean_title = clean_title.replace('(Original Mix)', '').replace('(Club Mix)', '').strip()
+                    track['clean_title'] = clean_title
+                    
+                    # Detect remix information
+                    if 'remix' in clean_title.lower():
+                        track['is_remix'] = True
+                        # Try to extract remixer name
+                        import re
+                        remix_match = re.search(r'\(([^)]+)\s+remix\)', clean_title, re.IGNORECASE)
+                        if remix_match:
+                            track['remixer'] = remix_match.group(1).strip()
+    
+    return release_data 
