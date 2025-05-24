@@ -1006,7 +1006,6 @@ def search_video():
                         # Boost for exact catalog number patterns commonly used in electronic music
                         if catalog_num:
                             # Check for catalog patterns like "ABC001", "XYZ-123", etc.
-                            import re
                             catalog_pattern = re.compile(r'\b' + re.escape(catalog_num) + r'\b', re.IGNORECASE)
                             if catalog_pattern.search(surrounding_text):
                                 score += 20  # Strong boost for exact catalog match
