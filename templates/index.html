@@ -1601,6 +1601,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                     target="_blank" class="youtube-link" style="margin-left: 10px;">
                                     <i class="youtube-icon">▶</i> Open on YouTube
                                 </a>
+                                
+                                <a href="${releaseData.uri || releaseData.resource_url || `https://www.discogs.com/release/${releaseData.id}`}" 
+                                    target="_blank" class="youtube-link" style="margin-left: 10px; background-color: #ff6600; border-color: #ff6600;">
+                                    <i class="youtube-icon">💿</i> View on Discogs
+                                </a>
                             </div>
                         </div>
                     `;

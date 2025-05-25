@@ -9,6 +9,8 @@ A tool for finding and listening to tracks played by your favorite DJs on MixesD
 - Listen to tracks directly in the app (audio-only, starting at 2 minutes)
 - Export tracklists as PDF for offline use
 - Built-in YouTube search for finding exact tracks
+- Discogs integration with label discography search and release details
+- Discogs button in release modals for quick access to original release pages
 - Minimal, clean interface with responsive design
 - Fast caching system for improved performance
 - Automatic rate limiting to prevent being blocked
