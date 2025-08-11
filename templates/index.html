@@ -1837,6 +1837,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // First decode the URI component if it's encoded
             let searchQuery = decodeURIComponent(query);
             
+            // Wait briefly for cleanup to complete before creating new player
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
             // Show loading state immediately for better user feedback
             if (trackItem) {
                 trackItem.classList.add('now-playing');
@@ -2042,7 +2045,23 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // If we're in a track item (DJ sets), use an inline player
             if (trackItem) {
-                // Clean up any existing global players first
+                // AGGRESSIVE CLEANUP: Stop all existing players and timers
+                
+                // Clear all player timers first
+                if (window.playerTimers) {
+                    Object.keys(window.playerTimers).forEach(timerId => {
+                        clearInterval(window.playerTimers[timerId]);
+                        delete window.playerTimers[timerId];
+                    });
+                }
+                
+                // Clear modal timer
+                if (window.modalPlayerTimer) {
+                    clearInterval(window.modalPlayerTimer);
+                    window.modalPlayerTimer = null;
+                }
+                
+                // Clean up any existing global players
                 if (activePlayerCleanup) {
                     try {
                         activePlayerCleanup();
@@ -2062,11 +2081,27 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
                 
+                // Remove ALL existing players (not just modal)
+                document.querySelectorAll('.inline-player-container').forEach(container => {
+                    container.style.display = 'none';
+                    container.innerHTML = '';
+                });
+                
                 // Remove any modal players
                 const existingModal = document.getElementById('youtube-player-container');
                 if (existingModal) {
                     existingModal.remove();
                 }
+                
+                // Reset all track states
+                document.querySelectorAll('.track-item.now-playing').forEach(item => {
+                    item.classList.remove('now-playing');
+                    const btn = item.querySelector('.play-button');
+                    if (btn) {
+                        btn.innerHTML = '<span class="play-icon">▶</span> Play';
+                        btn.classList.remove('now-playing-button');
+                    }
+                });
                 
                 // Find all currently playing tracks and reset them
                 document.querySelectorAll('.track-item.now-playing').forEach(item => {
