@@ -1768,6 +1768,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const playButton = trackItem.querySelector('.play-button');
             if (playButton) {
                 playButton.innerHTML = '<span class="play-icon">▶</span> Retry';
+                playButton.classList.remove('now-playing-button');
                 
                 // Remove any existing click handlers
                 const newPlayButton = playButton.cloneNode(true);
@@ -1787,6 +1788,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (iframeWrapper) {
                         iframeWrapper.style.display = 'block';
                     }
+                    
+                    // Reset track item state
+                    trackItem.classList.remove('now-playing');
                     
                     // Retry search
                     searchYouTube(query, trackItem);
@@ -2021,10 +2025,22 @@ document.addEventListener('DOMContentLoaded', function() {
                             playerContainer.innerHTML = '';
                         }
                         
-                        // Reset play button text
+                        // Reset play button text and functionality
                         const playButton = item.querySelector('.play-button');
-                            if (playButton) {
+                        if (playButton) {
                             playButton.innerHTML = '<span class="play-icon">▶</span> Play';
+                            playButton.classList.remove('now-playing-button');
+                            
+                            // Restore original click functionality
+                            const newPlayButton = playButton.cloneNode(true);
+                            playButton.parentNode.replaceChild(newPlayButton, playButton);
+                            
+                            // Re-add the original play functionality
+                            newPlayButton.addEventListener('click', function() {
+                                const query = this.dataset.query;
+                                const trackItem = this.closest('.track-item');
+                                searchYouTube(query, trackItem);
+                            });
                         }
                         
                         // Clear any existing timers for this track
@@ -2065,21 +2081,29 @@ document.addEventListener('DOMContentLoaded', function() {
                             if (this.dataset.playerState === 'paused') {
                                 // Resume playing
                                 if (player && typeof player.playVideo === 'function') {
-                                    // Use YouTube API if available
                                     player.playVideo();
                                 } else {
-                                    // Fallback to postMessage
                                     playerIframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                                }
+                                this.innerHTML = '<span class="playing-indicator">Now Playing</span>';
+                                this.dataset.playerState = 'playing';
+                            } else if (this.dataset.playerState === 'ended') {
+                                // Replay from beginning
+                                if (player && typeof player.seekTo === 'function' && typeof player.playVideo === 'function') {
+                                    player.seekTo(120); // Start at 2:00 like initial play
+                                    player.playVideo();
+                                } else {
+                                    // Fallback: reload the iframe to restart
+                                    const currentSrc = playerIframe.src;
+                                    playerIframe.src = currentSrc;
                                 }
                                 this.innerHTML = '<span class="playing-indicator">Now Playing</span>';
                                 this.dataset.playerState = 'playing';
                             } else {
                                 // Pause video
                                 if (player && typeof player.pauseVideo === 'function') {
-                                    // Use YouTube API if available
                                     player.pauseVideo();
                                 } else {
-                                    // Fallback to postMessage
                                     playerIframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
                                 }
                                 this.innerHTML = '<span class="playing-indicator">▶ Resume</span>';
