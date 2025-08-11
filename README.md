@@ -122,6 +122,7 @@ REDIS_URL=redis://custom-host:6379 python worker_simple.py
 The application can be configured using environment variables in a `.env` file:
 
 ### Production Configuration (Railway)
+
 ```bash
 # Flask configuration
 FLASK_DEBUG=0                    # Debug mode disabled in production
@@ -152,6 +153,7 @@ DISCOGS_USER_AGENT="TheDigger/1.0 +https://github.com/Moodyw03/thedigger25"
 ```
 
 ### Development Configuration
+
 ```bash
 # Flask configuration
 FLASK_DEBUG=1                   # Debug mode enabled for development
@@ -173,6 +175,7 @@ RATE_LIMIT_RPM=45               # Higher rate limit for development
 This application is production-ready and deployed on Railway with Redis Queue support.
 
 ### Current Deployment
+
 - **Live URL**: https://thedigger20.up.railway.app
 - **Status**: ✅ Fully operational with background job processing
 - **Redis**: Configured with Railway Redis service for queue management
@@ -180,12 +183,14 @@ This application is production-ready and deployed on Railway with Redis Queue su
 ### Deployment Steps
 
 1. **Create Railway Project**
+
    ```bash
    # Sign up at railway.app
    # Create new project from GitHub repo
    ```
 
 2. **Add Redis Service**
+
    ```bash
    # In Railway dashboard:
    # - Click "Add Service" → "Database" → "Redis"
@@ -194,6 +199,7 @@ This application is production-ready and deployed on Railway with Redis Queue su
 
 3. **Configure Environment Variables**
    In Railway service settings → Variables tab:
+
    ```bash
    REDIS_URL=redis://default:password@redis.railway.internal:6379  # From Redis service
    FLASK_DEBUG=0
@@ -211,6 +217,7 @@ This application is production-ready and deployed on Railway with Redis Queue su
    - Auto-deployment on GitHub pushes
 
 ### Production Features
+
 - ✅ **Horizontal Scaling**: Web + Worker process separation
 - ✅ **Background Jobs**: Redis Queue with 1-hour timeout
 - ✅ **Caching**: Multi-level Redis + in-memory caching
@@ -219,6 +226,7 @@ This application is production-ready and deployed on Railway with Redis Queue su
 - ✅ **Real-time Monitoring**: Job status and progress tracking
 
 ### Security Configuration
+
 - ✅ **Debug Mode**: Disabled in production
 - ✅ **CORS**: Configured for cross-origin requests
 - ✅ **Environment Variables**: Sensitive data in Railway variables
@@ -240,29 +248,33 @@ http://localhost:8080/direct_pdf_download?artist_name=Ben%20UFO
 The application provides a comprehensive REST API for music data processing:
 
 #### Core Search Endpoints
+
 - `POST /search` - Start background job for DJ tracklist search (recommended)
 - `GET /job/<job_id>/status` - Get real-time job status and progress
 - `GET /job/<job_id>/result` - Retrieve completed job results
 - `POST /clear_cache` - Clear cached results for specific artist (admin)
 
-#### Legacy/Direct Endpoints  
+#### Legacy/Direct Endpoints
+
 - `GET /api/list?artist_name=<name>` - Synchronous search (may timeout)
 - `GET /search_video?query=<track>` - YouTube video search
 - `GET /start_pdf_job?artist_name=<name>` - Background PDF generation
 - `GET /get_pdf/<job_id>` - Download generated PDF
 
 #### Discogs Integration
+
 - `GET /discogs/search_label?label_name=<name>` - Search record labels
 - `GET /discogs/label/<id>/releases` - Get label discography
 - `GET /discogs/release/<id>` - Get detailed release information
 
 #### Example Usage
+
 ```bash
 # Start background search
 curl -X POST https://thedigger20.up.railway.app/search \
   -d "artist_name=Eddie Richards"
 
-# Check job status  
+# Check job status
 curl https://thedigger20.up.railway.app/job/<job_id>/status
 
 # Get results
@@ -284,24 +296,28 @@ curl https://thedigger20.up.railway.app/job/<job_id>/result
 ## Technology Stack
 
 ### Backend Infrastructure
+
 - **Framework**: Python 3.x, Flask 3.0.2
 - **Queue System**: Redis 6.4.0, RQ (Redis Queue) 2.4.1
 - **Worker Process**: Python RQ SimpleWorker with job persistence
 - **Database**: Redis for caching and job queue management
 
-### Data Processing Pipeline  
+### Data Processing Pipeline
+
 - **Web Scraping**: BeautifulSoup 4.13.4, requests 2.31.0
 - **Data Validation**: Custom regex normalization and cleaning
 - **Rate Limiting**: Configurable RPM limits with exponential backoff
 - **PDF Generation**: ReportLab 4.3.1 for tracklist exports
 
 ### Frontend & APIs
+
 - **UI**: Responsive HTML5, CSS3, vanilla JavaScript
 - **Audio Playback**: YouTube embed API (audio-only mode)
 - **External APIs**: MixesDB.com scraping, Discogs API, YouTube search
 - **Real-time Updates**: AJAX polling for job status
 
 ### Production Deployment
+
 - **Platform**: Railway cloud platform
 - **Process Management**: Procfile-based (web + worker)
 - **Security**: HTTPS, environment variable management
@@ -310,6 +326,7 @@ curl https://thedigger20.up.railway.app/job/<job_id>/result
 ## 🔒 Security & Best Practices
 
 ### Production Security
+
 - ✅ **Environment Variables**: All sensitive data stored in Railway environment variables
 - ✅ **Debug Mode**: Disabled in production (`FLASK_DEBUG=0`)
 - ✅ **HTTPS**: Enforced by Railway edge servers
@@ -319,6 +336,7 @@ curl https://thedigger20.up.railway.app/job/<job_id>/result
 - ✅ **Error Handling**: Graceful error handling without sensitive data exposure
 
 ### API Security
+
 - ✅ **No Authentication Required**: Public API for music data (by design)
 - ✅ **Rate Limiting**: Built-in protection against spam/abuse
 - ✅ **Request Validation**: All parameters validated and sanitized
@@ -326,11 +344,13 @@ curl https://thedigger20.up.railway.app/job/<job_id>/result
 - ✅ **Cache Security**: TTL-based cache invalidation
 
 ### External API Management
+
 - ✅ **Discogs Token**: Secured in environment variables
 - ✅ **User Agents**: Proper identification for external services
 - ✅ **Respectful Scraping**: Rate limits respect target server resources
 
 ### Data Privacy
+
 - ✅ **No User Data**: Application doesn't collect personal information
 - ✅ **No Persistent Storage**: Only caches music metadata temporarily
 - ✅ **Public Data Only**: Sources only publicly available information
@@ -338,6 +358,7 @@ curl https://thedigger20.up.railway.app/job/<job_id>/result
 ## Development
 
 ### Contributing
+
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
@@ -345,6 +366,7 @@ curl https://thedigger20.up.railway.app/job/<job_id>/result
 5. Submit a pull request
 
 ### Security Guidelines
+
 - Never commit API tokens or credentials
 - Use environment variables for all configuration
 - Test rate limiting and error handling
