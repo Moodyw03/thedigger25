@@ -2035,10 +2035,24 @@ document.addEventListener('DOMContentLoaded', function() {
                             const newPlayButton = playButton.cloneNode(true);
                             playButton.parentNode.replaceChild(newPlayButton, playButton);
                             
-                            // Re-add the original play functionality
+                            // Re-add the original play functionality with proper state handling
                             newPlayButton.addEventListener('click', function() {
                                 const query = this.dataset.query;
                                 const trackItem = this.closest('.track-item');
+                                
+                                // Ensure clean state before starting
+                                trackItem.classList.remove('now-playing');
+                                const existingPlayer = trackItem.querySelector('.inline-player-container');
+                                if (existingPlayer) {
+                                    existingPlayer.style.display = 'none';
+                                    existingPlayer.innerHTML = '';
+                                }
+                                
+                                // Reset button state
+                                this.innerHTML = '<span class="play-icon">▶</span> Play';
+                                this.classList.remove('now-playing-button');
+                                
+                                // Start fresh playback using the standard searchYouTube function
                                 searchYouTube(query, trackItem);
                             });
                         }
