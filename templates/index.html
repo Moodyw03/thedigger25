@@ -1809,6 +1809,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let activePlayerCleanup = null;
     let lastClickTime = 0;
     let lastClickedTrack = null;
+    
+    // Track all active timers for proper cleanup
+    let activeRetryTimers = new Set();
+    let activePlaybackTimers = new Set();
 
     // Search YouTube for a track (existing functionality)
     async function searchYouTube(query, trackItem = null) {
@@ -2047,7 +2051,18 @@ document.addEventListener('DOMContentLoaded', function() {
             if (trackItem) {
                 // AGGRESSIVE CLEANUP: Stop all existing players and timers
                 
-                // Clear all player timers first
+                // Clear all tracked retry and playback timers
+                activeRetryTimers.forEach(timerId => {
+                    clearTimeout(timerId);
+                });
+                activeRetryTimers.clear();
+                
+                activePlaybackTimers.forEach(timerId => {
+                    clearTimeout(timerId);
+                });
+                activePlaybackTimers.clear();
+                
+                // Clear all player timers
                 if (window.playerTimers) {
                     Object.keys(window.playerTimers).forEach(timerId => {
                         clearInterval(window.playerTimers[timerId]);
@@ -2324,12 +2339,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                                     event.target.playVideo();
                                                     event.target.unMute();
                                                     playAttempts++;
-                                                    setTimeout(ensurePlayback, 1000);
+                                                    const timerId = setTimeout(ensurePlayback, 1000);
+                                                    activePlaybackTimers.add(timerId);
                                                 }
                                             };
                                             
                                             // Start checking playback
-                                            setTimeout(ensurePlayback, 500);
+                                            const initialTimerId = setTimeout(ensurePlayback, 500);
+                                            activePlaybackTimers.add(initialTimerId);
                                         },
                                         'onStateChange': function(event) {
                                             // Update button state based on player state
@@ -2433,7 +2450,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         // Try again in a second
                         retryCount++;
-                        setTimeout(checkIframeLoaded, 1000);
+                        const timerId = setTimeout(checkIframeLoaded, 1000);
+                        activeRetryTimers.add(timerId);
                     };
                     
                     // Function to show retry options
@@ -2508,7 +2526,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Start checking - with timeout
                     let retryCount = 0;
                     const maxRetries = 10;
-                    setTimeout(checkIframeLoaded, 2000);
+                    const initialCheckTimer = setTimeout(checkIframeLoaded, 2000);
+                    activeRetryTimers.add(initialCheckTimer);
                 }
         } else {
                 // If we're in label discography or outside a track, use the modal player
