@@ -117,6 +117,30 @@ def index():
     """Render the home page with search form."""
     return render_template('index.html', year=datetime.datetime.now().year)
 
+@app.route("/clear_cache", methods=['POST'])
+def clear_cache():
+    """Clear cache for a specific artist."""
+    artist_name = request.form.get("artist_name", "")
+    
+    if not artist_name:
+        return jsonify({"error": "Artist name is required"}), 400
+    
+    cache_key = f"artist_cache:{artist_name.lower().replace(' ', '_')}"
+    
+    if redis_cache_client:
+        try:
+            deleted = redis_cache_client.delete(cache_key)
+            if deleted:
+                logger.info(f"Cleared cache for artist: {artist_name}")
+                return jsonify({"status": "success", "message": f"Cache cleared for {artist_name}"})
+            else:
+                return jsonify({"status": "not_found", "message": f"No cache found for {artist_name}"})
+        except redis.exceptions.RedisError as e:
+            logger.error(f"Redis error clearing cache for {artist_name}: {e}")
+            return jsonify({"error": "Failed to clear cache"}), 500
+    else:
+        return jsonify({"error": "Redis not available"}), 503
+
 @app.route("/search", methods=['POST']) # Changed to POST for clarity
 def start_search_job():
     """Enqueue a search job, checking cache first, and return the job ID or cached data."""
