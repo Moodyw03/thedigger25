@@ -1804,9 +1804,21 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
                     
+    // Global state to prevent multiple simultaneous player creation
+    let isCreatingPlayer = false;
+    let activePlayerCleanup = null;
+
     // Search YouTube for a track (existing functionality)
     async function searchYouTube(query, trackItem = null) {
         try {
+            // Prevent multiple simultaneous player creation
+            if (isCreatingPlayer) {
+                console.log('Player creation already in progress, ignoring new request');
+                return;
+            }
+            
+            isCreatingPlayer = true;
+            
             // First decode the URI component if it's encoded
             let searchQuery = decodeURIComponent(query);
             
@@ -2015,6 +2027,32 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // If we're in a track item (DJ sets), use an inline player
             if (trackItem) {
+                // Clean up any existing global players first
+                if (activePlayerCleanup) {
+                    try {
+                        activePlayerCleanup();
+                        activePlayerCleanup = null;
+                    } catch (e) {
+                        console.warn('Error during player cleanup:', e);
+                    }
+                }
+                
+                // Destroy any existing YouTube players
+                if (window.ytPlayer) {
+                    try {
+                        window.ytPlayer.destroy();
+                        window.ytPlayer = null;
+                    } catch (e) {
+                        console.warn('Error destroying YouTube player:', e);
+                    }
+                }
+                
+                // Remove any modal players
+                const existingModal = document.getElementById('youtube-player-container');
+                if (existingModal) {
+                    existingModal.remove();
+                }
+                
                 // Find all currently playing tracks and reset them
                 document.querySelectorAll('.track-item.now-playing').forEach(item => {
                     if (item !== trackItem) {
@@ -2176,6 +2214,25 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         </div>
                     `;
+                    
+                    // Register cleanup function for this player
+                    activePlayerCleanup = () => {
+                        const iframe = document.getElementById(playerId);
+                        if (iframe) {
+                            iframe.src = 'about:blank';
+                            iframe.remove();
+                        }
+                        const container = trackItem.querySelector('.inline-player-container');
+                        if (container) {
+                            container.style.display = 'none';
+                            container.innerHTML = '';
+                        }
+                        // Clear any timers
+                        if (playerTimers[trackId]) {
+                            clearInterval(playerTimers[trackId]);
+                            delete playerTimers[trackId];
+                        }
+                    };
                     
                     // Register this iframe with YouTube API
                     setTimeout(() => {
@@ -3083,6 +3140,9 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('close-error').addEventListener('click', () => {
                 errorContainer.remove();
             });
+        } finally {
+            // Always reset the flag to allow new player creation
+            isCreatingPlayer = false;
         }
     }
 });
