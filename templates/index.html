@@ -2030,39 +2030,44 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (playButton) {
                             playButton.innerHTML = '<span class="play-icon">▶</span> Play';
                             playButton.classList.remove('now-playing-button');
-                            
-                            // Restore original click functionality
-                            const newPlayButton = playButton.cloneNode(true);
-                            playButton.parentNode.replaceChild(newPlayButton, playButton);
-                            
-                            // Re-add the original play functionality with proper state handling
-                            newPlayButton.addEventListener('click', function() {
-                                const query = this.dataset.query;
-                                const trackItem = this.closest('.track-item');
-                                
-                                // Ensure clean state before starting
-                                trackItem.classList.remove('now-playing');
-                                const existingPlayer = trackItem.querySelector('.inline-player-container');
-                                if (existingPlayer) {
-                                    existingPlayer.style.display = 'none';
-                                    existingPlayer.innerHTML = '';
-                                }
-                                
-                                // Reset button state
-                                this.innerHTML = '<span class="play-icon">▶</span> Play';
-                                this.classList.remove('now-playing-button');
-                                
-                                // Start fresh playback using the standard searchYouTube function
-                                searchYouTube(query, trackItem);
-                            });
                         }
+                    }
+                });
+                
+                // Ensure ALL play buttons have proper click handlers (not just currently playing ones)
+                document.querySelectorAll('.track-item .play-button').forEach(btn => {
+                    // Skip the current track button since it's about to change state
+                    if (btn.closest('.track-item') === trackItem) return;
+                    
+                    // Only restore handler if button doesn't already have one or looks "dead"
+                    if (!btn.onclick && !btn.hasAttribute('data-handler-ready')) {
+                        // Clone button to remove any existing handlers
+                        const newButton = btn.cloneNode(true);
+                        btn.parentNode.replaceChild(newButton, btn);
                         
-                        // Clear any existing timers for this track
-                        const trackId = item.dataset.trackId;
-                        if (trackId && playerTimers[trackId]) {
-                            clearInterval(playerTimers[trackId]);
-                            delete playerTimers[trackId];
-                        }
+                        // Add fresh click handler
+                        newButton.addEventListener('click', function() {
+                            const query = this.dataset.query;
+                            const trackItem = this.closest('.track-item');
+                            
+                            // Ensure clean state before starting
+                            trackItem.classList.remove('now-playing');
+                            const existingPlayer = trackItem.querySelector('.inline-player-container');
+                            if (existingPlayer) {
+                                existingPlayer.style.display = 'none';
+                                existingPlayer.innerHTML = '';
+                            }
+                            
+                            // Reset button state
+                            this.innerHTML = '<span class="play-icon">▶</span> Play';
+                            this.classList.remove('now-playing-button');
+                            
+                            // Start fresh playback
+                            searchYouTube(query, trackItem);
+                        });
+                        
+                        // Mark as having a handler
+                        newButton.setAttribute('data-handler-ready', 'true');
                     }
                 });
                 
