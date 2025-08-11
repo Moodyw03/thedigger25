@@ -1807,16 +1807,31 @@ document.addEventListener('DOMContentLoaded', function() {
     // Global state to prevent multiple simultaneous player creation
     let isCreatingPlayer = false;
     let activePlayerCleanup = null;
+    let lastClickTime = 0;
+    let lastClickedTrack = null;
 
     // Search YouTube for a track (existing functionality)
     async function searchYouTube(query, trackItem = null) {
         try {
-            // Prevent multiple simultaneous player creation
-            if (isCreatingPlayer) {
-                console.log('Player creation already in progress, ignoring new request');
+            const currentTime = Date.now();
+            const timeSinceLastClick = currentTime - lastClickTime;
+            
+            // Prevent rapid clicks on the same track (debounce 1 second)
+            if (isCreatingPlayer && lastClickedTrack === trackItem && timeSinceLastClick < 1000) {
+                console.log('Rapid click detected on same track, ignoring');
                 return;
             }
             
+            // Allow switching between different tracks immediately
+            // Only block if creating player for the exact same track too quickly
+            if (isCreatingPlayer && lastClickedTrack !== trackItem) {
+                console.log('Switching to different track, cleaning up current player first');
+                isCreatingPlayer = false; // Reset to allow new track
+            }
+            
+            // Update tracking variables
+            lastClickTime = currentTime;
+            lastClickedTrack = trackItem;
             isCreatingPlayer = true;
             
             // First decode the URI component if it's encoded
